@@ -36,7 +36,8 @@ namespace nntrainer {
 Kai4Tensor::Kai4Tensor(std::string name_, Tformat fm, QScheme qscheme_) : 
   TensorBase(name_, fm, Tdatatype::QINT4), qscheme(qscheme_) {
   offset = 0;
-  _idx_variant = 4;
+  _idx_variant = 4; //Default set to matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod
+  transB = true;
 }
 
 Kai4Tensor::Kai4Tensor(const TensorDim &d, bool alloc_now, Initializer init,
@@ -55,7 +56,8 @@ Kai4Tensor::Kai4Tensor(const TensorDim &d, bool alloc_now, Initializer init,
     allocate();
   }
   offset = 0;
-  _idx_variant = 4;
+  _idx_variant = 4; //Default set to matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod
+  transB = true;
 }
 
 Kai4Tensor::Kai4Tensor(const TensorDim &d, const void *buf) :
@@ -127,8 +129,8 @@ size_t Kai4Tensor::size() const {
     return getDim().getDataLen();
   }
   
-  // kai_get_rhs_packed_size expects: n, k, nr, kr, bl (5 arguments)
-  return nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(height(), width(), _idx_variant, )
+  // 
+  return nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(height(), width(), _idx_variant, transB)
 #else
   return getDim().getDataLen();
 #endif
@@ -142,11 +144,7 @@ QScheme Kai4Tensor::q_scheme() const {
   return qscheme;  // Return the actual qscheme member variable
 }
 
-void Kai4Tensor::setPackingParams(size_t nr, size_t kr, size_t bl) {
-    _nr = nr;
-    _kr = kr;
-    _bl = bl;
-}
+
 
 void Kai4Tensor::setKernelVariant(uint32_t variant_idx) {
   NNTR_THROW_IF(variant_idx > 7, std::invalid_argument)
