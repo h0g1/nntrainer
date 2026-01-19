@@ -1017,11 +1017,13 @@ Tensor &FloatTensor::dotQInteger(Tensor const &input, Tensor &output,
 #ifndef ENABLE_OPENCL
 #if defined(ENABLE_FP16) && defined(__aarch64__)
   // On ARM64 with FP16, QINT4 uses Kai4Tensor (check datatype or q_scheme)
-  if (input.q_scheme() == QScheme::PER_BLOCK_AFFINE || 
-      (dtype == Tdatatype::QINT4 || dtype == Tdatatype::QINT4_KAI)) {
-    // Use block-32 Kai kernels (qsi8d32p_qsi4c32p)
-    // Assume input (weight) data is already packed for block-32
-    uint32_t idx_variant = (M == 1) ? 1 : 3;  // GEMV vs GEMM (variant 3 for block-32)
+  if (input.q_scheme() == QScheme::PER_CHANNEL_AFFINE && 
+      (dtype == Tdatatype::QINT4)) {
+    // Use block-32 Kai kernels (qsi8d32p_qsi4c32p) as a default
+    // TO BE IMPLEMENTED : Channel-wise quantization
+    // Assume input (weight) data is already packed for KAI GEMM or GEMV
+
+    uint32_t idx_variant = Kai4Tensor::getKernelVariant();
     
     // Call Kai block-32 offline-packed GEMM
     nntr_kai_gemm_qsi8d32p_qsi4c32p_olp(
@@ -1034,25 +1036,9 @@ Tensor &FloatTensor::dotQInteger(Tensor const &input, Tensor &output,
       -std::numeric_limits<float>::infinity(),  // lower_bound
       std::numeric_limits<float>::infinity()    // upper_bound
     );
-  } else if (input.q_scheme() == QScheme::PER_CHANNEL_AFFINE) {
-    // Use channel-wise Kai kernels (qai8dxp_qsi4cxp)
-    // Assume input (weight) data is already packed for Kai
-    uint32_t idx_variant = (M == 1) ? 1 : 6;  // GEMV vs GEMM variant
-    
-    // Call Kai offline-packed GEMM (weights already packed)
-    nntr_kai_gemm_qai8dxp_qsi4cxp_olp(
-      M, N, K, 
-      (void *)data,        // LHS (activations) - will be packed internally
-      (void *)mdata,       // RHS (weights) - assumed already packed
-      rdata,               // Output
-      idx_variant,
-      true,                // transB
-      -std::numeric_limits<float>::infinity(),  // lower_bound
-      std::numeric_limits<float>::infinity()    // upper_bound
-    );
   } else {
     throw std::runtime_error(
-      "Error: QINT4 Dot on CPU only supports PER_CHANNEL_AFFINE or PER_BLOCK_AFFINE schemes");
+      "Error: QINT4 Dot on CPU only supports PER_CHANNEL_AFFINE");
   }
 #else
   /// @note Kai kernels require ENABLE_FP16 and ARM64 architecture
