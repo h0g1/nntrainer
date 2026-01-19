@@ -93,6 +93,7 @@ endif
 if get_option('enable-fp16')
   test_target += [['unittest_nntrainer_tensor_fp16', []]]
   test_target += [['unittest_nntrainer_tensor_pool_fp16', []]]
+  test_target += [['unittest_kai_q40_comparison', []]]
 endif
 
 if get_option('enable-profile')
