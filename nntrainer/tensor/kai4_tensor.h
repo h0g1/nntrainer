@@ -218,6 +218,12 @@ public:
   void setKernelVariant(uint32_t variant_idx);
 
   /**
+   * @brief Get the current kernel variant index
+   * @return Current kernel variant index
+   */
+  uint32_t getKernelVariant() const { return _idx_variant; }
+
+  /**
     * @brief Get the current kernel variant index
     * 
     * @return uint32_t Current kernel variant index
@@ -259,7 +265,7 @@ private:
 
   // Trans or Not
   // Set to True because kxn format is not supported currently (Date : 2026/01/19)
-  bool transB = True;
+  bool transB = true;
   
  
 };

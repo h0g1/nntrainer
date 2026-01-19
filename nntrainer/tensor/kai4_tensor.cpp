@@ -130,7 +130,7 @@ size_t Kai4Tensor::size() const {
   }
   
   // 
-  return nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(height(), width(), _idx_variant, transB)
+  return nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(height(), width(), _idx_variant, transB);
 #else
   return getDim().getDataLen();
 #endif

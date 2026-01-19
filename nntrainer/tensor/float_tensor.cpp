@@ -1023,7 +1023,12 @@ Tensor &FloatTensor::dotQInteger(Tensor const &input, Tensor &output,
     // TO BE IMPLEMENTED : Channel-wise quantization
     // Assume input (weight) data is already packed for KAI GEMM or GEMV
 
-    uint32_t idx_variant = Kai4Tensor::getKernelVariant();
+    // Get variant from Kai4Tensor instance
+    uint32_t idx_variant = 4;  // default
+    auto* kai_tensor = dynamic_cast<const Kai4Tensor*>(&input);
+    if (kai_tensor != nullptr) {
+      idx_variant = kai_tensor->getKernelVariant();
+    }
     
     // Call Kai block-32 offline-packed GEMM
     nntr_kai_gemm_qsi8d32p_qsi4c32p_olp(
