@@ -55,6 +55,7 @@ Kai4Tensor::Kai4Tensor(const TensorDim &d, bool alloc_now, Initializer init,
     allocate();
   }
   offset = 0;
+  _idx_variant = 4;
 }
 
 Kai4Tensor::Kai4Tensor(const TensorDim &d, const void *buf) :
@@ -127,8 +128,7 @@ size_t Kai4Tensor::size() const {
   }
   
   // kai_get_rhs_packed_size expects: n, k, nr, kr, bl (5 arguments)
-  return kai_get_rhs_packed_size_rhs_pack_nxk_qsi4c32pscalef16_qsu4c32s16s0(
-    height(), width(), _nr, _kr, _bl);
+  return nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(height(), width(), _idx_variant, )
 #else
   return getDim().getDataLen();
 #endif

@@ -214,21 +214,7 @@ public:
    * @param kr Number of columns loaded in the innermost loop
    * @param bl Block length
    */
-  void setPackingParams(size_t nr, size_t kr, size_t bl = 32);
 
-  /**
-    * @brief Set the kernel variant to use for dot product
-    * 
-    * @param variant_idx Kernel variant index (0-7 for qai8dxp_qsi4cxp kernels)
-    *                    - 0: 1x4x32 GEMV (dotprod)
-    *                    - 1: 1x8x32 GEMV (dotprod)  
-    *                    - 2: 4x4x32 GEMM (i8mm)
-    *                    - 3: 8x4x32 GEMM (i8mm)
-    *                    - 4: 4x8x32 GEMM (i8mm)
-    *                    - 5: 8x8x32 GEMM (i8mm)
-    *                    - 6: 8x8x32 GEMM (dotprod)
-    *                    - 7: 16x4x32 GEMM (dotprod)
-    */
   void setKernelVariant(uint32_t variant_idx);
 
   /**
@@ -269,7 +255,7 @@ private:
   
   // Kernel variant index (default to variant 6: 8x8x32 GEMM dotprod for wider hardware support)
   // dotprod (ARMv8.2-A) is more widely available than i8mm (ARMv8.6-A)
-  uint8_t _idx_variant = 4;
+  uint32_t _idx_variant = 4;
   
  
 };
