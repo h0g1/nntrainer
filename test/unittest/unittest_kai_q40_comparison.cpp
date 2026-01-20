@@ -359,7 +359,7 @@ static void test_q40_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   size_t num_blocks = (N * K) / block_size;
   size_t q4_0_size = num_blocks * sizeof(block_q4_0);
   std::vector<uint8_t> q4_0_data(q4_0_size);
-  nntrainer::quantize_q4_0(weight_fp32.data(), q4_0_data.data(), N, K, nullptr);
+  nntrainer::quantize_q4_0(weight_fp32.data(), (void *)q4_0_data.data(), N, K, nullptr);
   std::vector<uint8_t> q4_0_repacked(q4_0_size);
   nntrainer::repack_q4_0(q4_0_data.data(), q4_0_repacked.data(), q4_0_size, N, K);
   
@@ -412,7 +412,7 @@ static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   
   // 4. Create Kai weight tensor using QINT4 datatype (creates Kai4Tensor on ARM64)
   nntrainer::TensorDim kai_dim(1, 1, N, K, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::QINT4);
-  nntrainer::Tensor kai_weight_tensor(kai_dim, false);
+  nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE);
   
   // Quantize using Kai's native block-32 quantization
   const size_t bl = 32;
