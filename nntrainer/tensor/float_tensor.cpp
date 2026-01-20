@@ -983,7 +983,7 @@ Tensor &FloatTensor::dotQnK(Tensor const &input, Tensor &output, bool trans,
   case Tdatatype::Q4_0:
     M = getDim().height();
     K = getDim().width();
-    N = input.getDim().width();
+    N = input.getDim().height(); // Changed from .width() to .height() since trans_in = True
 #ifdef ENABLE_OPENCL
     if (M == 1) {
       gemm_q4_0(M, N, K, data, K, (void *)mdata, N, rdata, N);
@@ -991,6 +991,7 @@ Tensor &FloatTensor::dotQnK(Tensor const &input, Tensor &output, bool trans,
       gemm_q4_0_cl((void *)mdata, data, rdata, M, N, K);
     }
 #else
+    std::cout << "This is Okay?" << std::endl;
     gemm_q4_0(M, N, K, data, K, (void *)mdata, N, rdata, N);
 #endif
     break;
@@ -1023,12 +1024,9 @@ Tensor &FloatTensor::dotQInteger(Tensor const &input, Tensor &output,
     // TO BE IMPLEMENTED : Channel-wise quantization
     // Assume input (weight) data is already packed for KAI GEMM or GEMV
 
-    // Get variant from Kai4Tensor instance
-    uint32_t idx_variant = 4;  // default
-    auto* kai_tensor = dynamic_cast<const Kai4Tensor*>(&input);
-    if (kai_tensor != nullptr) {
-      idx_variant = kai_tensor->getKernelVariant();
-    }
+
+    // Get variant from input Kai4Tensor (via Tensor wrapper)
+    uint32_t idx_variant = input.getKernelVariant();
     
     // Call Kai block-32 offline-packed GEMM
     nntr_kai_gemm_qsi8d32p_qsi4c32p_olp(

@@ -211,8 +211,6 @@ Tensor::Tensor(const TensorDim &d, bool alloc_now, Initializer init,
     // Fall back to generic Int4QTensor on other platforms
     itensor_ = std::make_unique<Int4QTensor>(d, alloc_now, init, name, qscheme);
 #endif
-  } else if (d.getDataType() == Tdatatype::QINT4_KAI) {
-      itensor_ = std::make_unique<Kai4Tensor>(d, alloc_now, init, name);
   } else if (d.getDataType() == Tdatatype::BCQ) {
 #ifdef ENABLE_BIQGEMM
     itensor_ = std::make_unique<BCQTensor>(d, alloc_now, init, name);
@@ -583,8 +581,22 @@ Tensor &Tensor::multiply(Tensor const &m, Tensor &output,
                 std::invalid_argument)
     << getName() << " is not contiguous, cannot multiply";
 
-  itensor_->multiply(m, output, beta);
-  return output;
+  return itensor_->multiply(m, output, beta);
+}
+
+
+
+uint32_t Tensor::getKernelVariant() const {
+#if defined(ENABLE_FP16) && defined(__aarch64__)
+  // Check if underlying tensor is Kai4Tensor
+  if (getDataType() == Tdatatype::QINT4) {
+    auto* kai_tensor = dynamic_cast<Kai4Tensor*>(itensor_.get());
+    if (kai_tensor != nullptr) {
+      return kai_tensor->getKernelVariant();
+    }
+  }
+#endif
+  return 4;  // Default variant
 }
 
 int Tensor::divide_i(float const &value) {

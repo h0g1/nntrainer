@@ -123,11 +123,6 @@ size_t Kai4Tensor::size() const {
   // Compute the packed size using Kai library function
   // This requires knowing packing params: nr, kr, bl
   // If not set, we can't compute size accurately
-  if (_nr == 0 || _kr == 0) {
-    // Fallback: just return dimension size
-    // In practice, setPackingParams or pack() should be called first
-    return getDim().getDataLen();
-  }
   
   // 
   return nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(height(), width(), _idx_variant, transB);

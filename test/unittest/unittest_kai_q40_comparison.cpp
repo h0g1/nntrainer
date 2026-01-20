@@ -351,7 +351,7 @@ static void test_q40_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   
   // 5. Create Q4_0 weight tensor by converting from FP32
   // This tests the full Tensor API quantization path
-  nntrainer::TensorDim q4_0_dim(1, 1, N, K, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::QINT4);
+  nntrainer::TensorDim q4_0_dim(1, 1, N, K, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::Q4_0);
   nntrainer::Tensor q4_0_weight_tensor(q4_0_dim);
   
   // Quantize using low-level API (since Tensor::copyData doesn't support QINT4)
@@ -370,8 +370,10 @@ static void test_q40_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   // 6. Run through Tensor::dot() API - this goes through FloatTensor::dot() -> dotQInteger()
   nntrainer::TensorDim output_dim(1, 1, M, N, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::FP32);
   nntrainer::Tensor q4_0_output_tensor(output_dim);
+  q4_0_output_tensor.allocate();
+  std::cout << "What is the problem?" << std::endl;
   activation_tensor.dot(q4_0_weight_tensor, q4_0_output_tensor, false, false, 0.0f);
-  
+  std::cout << "This is the problem?" << std::endl;
   // 7. Compare Q4_0 Tensor::dot() output vs FP32 reference
   std::vector<float> q4_0_vec(q4_0_output_tensor.getData<float>(), 
                                q4_0_output_tensor.getData<float>() + M * N);
@@ -419,9 +421,22 @@ static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   std::vector<uint8_t> kai_quant_data(N * num_blocks * bytes_per_block);
   nntr_kai_quant_qs4c32_f32(N, K, bl, weight_fp32.data(), kai_quant_data.data());
   
-  // Allocate and set Kai tensor data
+  // RHS Packing for offline-packed Kai API
+  uint32_t idx_variant = 4;  // Using variant 4
+  bool transB = true;
+
+  size_t packed_size = nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(N, K, idx_variant, transB);
+  std::vector<uint8_t> kai_packed_data(packed_size);
+
+  nntr_kai_qsi8d32p_qsi4c32p_rhs_pack(N, K,
+                                       kai_packed_data.data(),
+                                       kai_quant_data.data(),
+                                       nullptr,
+                                       idx_variant, transB);
+
+  // Allocate and set Kai tensor data with packed weights
   kai_weight_tensor.allocate();
-  std::memcpy(kai_weight_tensor.getData(), kai_quant_data.data(), kai_quant_data.size());
+  std::memcpy(kai_weight_tensor.getData(), kai_packed_data.data(), packed_size);
   
   // 5. Run through Tensor::dot() API - goes through FloatTensor::dot() -> dotQInteger()
   nntrainer::TensorDim output_dim(1, 1, M, N, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::FP32);

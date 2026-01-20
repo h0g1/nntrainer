@@ -29,7 +29,7 @@ public:
   /**
    * @brief     Basic Constructor of Tensor
    */
-  Kai4Tensor(std::string name_ = "", Tformat fm = Tformat::NCHW, QScheme qscheme_ = QScheme::PER_BLOCK_AFFINE);
+  Kai4Tensor(std::string name_ = "", Tformat fm = Tformat::NCHW, QScheme qscheme_ = QScheme::PER_CHANNEL_AFFINE);
 
   /**
    * @brief Construct a new Kai4Tensor object
@@ -42,7 +42,7 @@ public:
    */
   Kai4Tensor(const TensorDim &d, bool alloc_now,
               Initializer init = Initializer::NONE, std::string name = "",
-              QScheme qscheme_);
+              QScheme qscheme_ = QScheme::PER_CHANNEL_AFFINE);
 
   /**
    * @brief Construct a new Kai4Tensor object
@@ -223,12 +223,6 @@ public:
    */
   uint32_t getKernelVariant() const { return _idx_variant; }
 
-  /**
-    * @brief Get the current kernel variant index
-    * 
-    * @return uint32_t Current kernel variant index
-    */
-  uint32_t getKernelVariant() const { return _idx_variant; }
 
 private:
   /**
