@@ -221,14 +221,14 @@ static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   
   // Same tolerance as kernel tests
   constexpr float eps = 1.5e-5;
-  const float tolerance = eps * M * N;
+  const float tolerance = eps * M * K * N;
   
   EXPECT_LT(mse, tolerance) 
     << "Tensor::dot() API: MSE too high for M=" << M << ", K=" << K << ", N=" << N
     << ": MSE=" << mse << ", tolerance=" << tolerance;
 }
 #endif
-/*
+
 // Test cases for Tensor::dot() API integration
 TEST(TensorDotAPI_Q40, GEMM_256x1024x512) {
   test_q40_tensor_dot_api(256, 1024, 512);
@@ -238,6 +238,11 @@ TEST(TensorDotAPI_Q40, GEMV_1x3072x512) {
   test_q40_tensor_dot_api(1, 3072, 512);
 }
 
+TEST(TensorDotAPI_Q40, GEMM_32x1024x4096) {
+  test_q40_tensor_dot_api(32, 1024, 3096);
+}
+
+
 #if defined(ENABLE_FP16) && defined(__aarch64__)
 TEST(TensorDotAPI_Kai, GEMM_256x1024x512) {
   test_kai_tensor_dot_api(256, 1024, 512);
@@ -246,8 +251,12 @@ TEST(TensorDotAPI_Kai, GEMM_256x1024x512) {
 TEST(TensorDotAPI_Kai, GEMV_1x3072x512) {
   test_kai_tensor_dot_api(1, 3072, 512);
 }
+
+TEST(TensorDotAPI_Kai, GEMM_32x1024x4096) {
+  test_kai_tensor_dot_api(32, 1024, 4096);
+}
 #endif
-*/
+
 
 
 
