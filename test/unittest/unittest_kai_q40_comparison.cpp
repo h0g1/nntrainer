@@ -371,9 +371,8 @@ static void test_q40_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   nntrainer::TensorDim output_dim(1, 1, M, N, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::FP32);
   nntrainer::Tensor q4_0_output_tensor(output_dim);
   q4_0_output_tensor.allocate();
-  std::cout << "What is the problem?" << std::endl;
   activation_tensor.dot(q4_0_weight_tensor, q4_0_output_tensor, false, false, 0.0f);
-  std::cout << "This is the problem?" << std::endl;
+ 
   // 7. Compare Q4_0 Tensor::dot() output vs FP32 reference
   std::vector<float> q4_0_vec(q4_0_output_tensor.getData<float>(), 
                                q4_0_output_tensor.getData<float>() + M * N);
@@ -450,7 +449,7 @@ static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   
   // Same tolerance as kernel tests
   constexpr float eps = 1.5e-5;
-  const float tolerance = eps * M * K * N;
+  const float tolerance = eps * M * N;
   
   EXPECT_LT(mse, tolerance) 
     << "Tensor::dot() API: MSE too high for M=" << M << ", K=" << K << ", N=" << N
