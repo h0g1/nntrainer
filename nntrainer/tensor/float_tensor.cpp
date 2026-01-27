@@ -983,7 +983,8 @@ Tensor &FloatTensor::dotQnK(Tensor const &input, Tensor &output, bool trans,
   case Tdatatype::Q4_0:
     M = getDim().height();
     K = getDim().width();
-    N = input.getDim().height(); // Changed from .width() to .height() since trans_in = True
+    //N = input.getDim().height(); // Changed from .width() to .height() since trans_in = True
+    N = input.getDim().width();
 #ifdef ENABLE_OPENCL
     if (M == 1) {
       gemm_q4_0(M, N, K, data, K, (void *)mdata, N, rdata, N);
