@@ -117,13 +117,13 @@ static void test_q40_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   std::memcpy(activation_tensor.getData<float>(), activation_fp32.data(), M * K * sizeof(float));
   
   // 4. Create FP32 weight tensor
-  nntrainer::TensorDim weight_dim(1, 1, N, K, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::FP32);
+  nntrainer::TensorDim weight_dim(1, 1, K, N, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::FP32);
   nntrainer::Tensor weight_tensor_fp32(weight_dim);
   std::memcpy(weight_tensor_fp32.getData<float>(), weight_fp32.data(), N * K * sizeof(float));
   
   // 5. Create Q4_0 weight tensor by converting from FP32
   // This tests the full Tensor API quantization path
-  nntrainer::TensorDim q4_0_dim(1, 1, N, K, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::Q4_0);
+  nntrainer::TensorDim q4_0_dim(1, 1, K, N, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::Q4_0);
   nntrainer::Tensor q4_0_weight_tensor(q4_0_dim);
   
   // Quantize using low-level API (since Tensor::copyData doesn't support QINT4)
@@ -131,9 +131,9 @@ static void test_q40_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   size_t num_blocks = (N * K) / block_size;
   size_t q4_0_size = num_blocks * sizeof(block_q4_0);
   std::vector<uint8_t> q4_0_data(q4_0_size);
-  nntrainer::quantize_q4_0(weight_fp32.data(), (void *)q4_0_data.data(), N, K, nullptr);
+  nntrainer::quantize_q4_0(weight_fp32.data(), (void *)q4_0_data.data(), K, N, nullptr);
   std::vector<uint8_t> q4_0_repacked(q4_0_size);
-  nntrainer::repack_q4_0(q4_0_data.data(), q4_0_repacked.data(), q4_0_size, N, K);
+  nntrainer::repack_q4_0(q4_0_data.data(), q4_0_repacked.data(), q4_0_size, K, N);
   
   // Allocate and set Q4_0 tensor data
   q4_0_weight_tensor.allocate();
