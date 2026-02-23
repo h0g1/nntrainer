@@ -16,6 +16,7 @@
 #include <tensor_base.h>
 #include <vector>
 
+
 namespace nntrainer {
 
 /**
@@ -42,7 +43,7 @@ public:
    */
   Kai4Tensor(const TensorDim &d, bool alloc_now,
               Initializer init = Initializer::NONE, std::string name = "",
-              QScheme qscheme_ = QScheme::PER_CHANNEL_AFFINE);
+              QScheme qscheme_ = QScheme::PER_CHANNEL_AFFINE, unsigned int idx_variant = 4);
 
   /**
    * @brief Construct a new Kai4Tensor object

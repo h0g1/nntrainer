@@ -30,6 +30,7 @@
 #include <limits>
 #include <stdexcept>
 #include <vector>
+#include <iostream>
 
 namespace nntrainer {
 
@@ -41,7 +42,7 @@ Kai4Tensor::Kai4Tensor(std::string name_, Tformat fm, QScheme qscheme_) :
 }
 
 Kai4Tensor::Kai4Tensor(const TensorDim &d, bool alloc_now, Initializer init,
-                         std::string name, QScheme qscheme_) :
+                         std::string name, QScheme qscheme_, unsigned int idx_variant) :
   TensorBase(d, false, init, name), qscheme(qscheme_) {
   // Kai4Tensor expects 2D semantics (NxK) for packing
   // Adjust based on strict requirement if needed, essentially we want 2D
@@ -56,7 +57,7 @@ Kai4Tensor::Kai4Tensor(const TensorDim &d, bool alloc_now, Initializer init,
     allocate();
   }
   offset = 0;
-  _idx_variant = 4; //Default set to matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod
+  _idx_variant = idx_variant; //Default set to matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod
   transB = true;
 }
 
@@ -78,6 +79,7 @@ void Kai4Tensor::allocate() {
   if (src_tensor) {
     /// allocate data based on the source tensor
     allocateSrcTensor();
+ 
     /** as this memory is shared, do NOT initialize */
   } else {
     /// allocate new memory for the tensor data
@@ -91,7 +93,6 @@ void Kai4Tensor::allocate() {
       delete[] mem_data->template getAddr<uint8_t>();
       delete mem_data;
     });
-
     offset = 0;
     initialize();
   }

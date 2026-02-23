@@ -255,8 +255,7 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
   activation_tensor.allocate();
 
   nntrainer::TensorDim kai_dim(1, 1, N, K, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::QINT4);
-  nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE);
-  kai_weight_tensor.allocate();
+
 
   nntrainer::TensorDim q4_0_dim(1, 1, K, N, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::Q4_0);
   nntrainer::Tensor q4_0_weight_tensor(q4_0_dim);
@@ -292,22 +291,25 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
   
   for (unsigned int j = 0; j < N_K; j ++){
     // j-th ukernel (KAI)
+    idx_variant = j;
+    nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE, idx_variant);
+    kai_weight_tensor.allocate();
+
+    packed_size = nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(N, K, idx_variant, transB);
+
+    std::vector<uint8_t> kai_packed_data(packed_size);
+    
     for (unsigned int i = 0; i < T; i ++){
       // i-th iteraiton
       
       // Copy i-th acvitvation chunk
       std::memcpy(activation_tensor.getData<float>(), activation_fp32.data() + i * M * K, M * K * sizeof(float));
-      
+      std::cout << "I'm here!" << std::endl;
       // 4. Create Kai weight tensor using QINT4 datatype (creates Kai4Tensor on ARM64)
       
       nntr_kai_quant_qs4c32_f32(N, K, bl, weight_fp32.data() + i * N * K, kai_quant_data.data());
       
-      // RHS Packing for offline-packed Kai API
-      idx_variant = j;  // j-th ukernel
-
-      packed_size = nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(N, K, idx_variant, transB);
-
-      std::vector<uint8_t> kai_packed_data(packed_size);
+      std::cout << "I'm here2!" << std::endl;
 
       nntr_kai_qsi8d32p_qsi4c32p_rhs_pack(N, K,
                                           kai_packed_data.data(),
@@ -315,9 +317,14 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
                                           nullptr,
                                           idx_variant, transB);
 
+                                          
+      std::cout << "I'm here3!" << std::endl;                                          
+
       // Allocate and set Kai tensor data with packed weights
       
       std::memcpy(kai_weight_tensor.getData(), kai_packed_data.data(), packed_size);
+
+      std::cout << "I'm here4!" << std::endl;
       
       // 4. Run through Tensor::dot() API - goes through FloatTensor::dot() -> dotQInteger()
       auto t0 = high_resolution_clock::now();

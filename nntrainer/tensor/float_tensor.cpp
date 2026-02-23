@@ -25,6 +25,7 @@
 
 #include <tensor.h>
 #include <util_func.h>
+#include <iostream>
 
 #ifdef ENABLE_OPENCL
 #include "blas_kernels.h"
@@ -1023,7 +1024,7 @@ Tensor &FloatTensor::dotQInteger(Tensor const &input, Tensor &output,
     // TO BE IMPLEMENTED : Channel-wise quantization
     // Assume input (weight) data is already packed for KAI GEMM or GEMV
 
-
+    
     // Get variant from input Kai4Tensor (via Tensor wrapper)
     uint32_t idx_variant = input.getKernelVariant();
     
@@ -1038,6 +1039,7 @@ Tensor &FloatTensor::dotQInteger(Tensor const &input, Tensor &output,
       -std::numeric_limits<float>::infinity(),  // lower_bound
       std::numeric_limits<float>::infinity()    // upper_bound
     );
+    std::cout << "here?" << std::endl;
   } else {
     throw std::runtime_error(
       "Error: QINT4 Dot on CPU only supports PER_CHANNEL_AFFINE");
