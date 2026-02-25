@@ -26,6 +26,9 @@
 
 #include <chrono>
 #include <iostream>
+#include <fstream>
+#include <string>
+
 using std::chrono::duration_cast;
 using std::chrono::high_resolution_clock;
 using std::chrono::microseconds;
@@ -100,6 +103,8 @@ static float compute_mse(const std::vector<float>& a, const std::vector<float>& 
   }
   return static_cast<float>(sum / a.size());
 }
+
+
 
 
 // ============================================================================
@@ -242,19 +247,19 @@ static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
 
 static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
 
-  const int T = 1; // T iterations
+  const int T = 30; // T iterations
   
+  std::string uname[8] = {"matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4x4_1x4_neon_dotprod", "matmul_clamp_f32_qsi8d32p1x4_qsi4c32p8x4_1x8_sve_dotprod", "matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod", "matmul_clamp_f32_qsi8d32p1x8_qsi4c32p8x8_1x8_sve_dotprod", "matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod", "matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm", "matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_8x4x32_neon_i8mm", "matmul_clamp_f32_qsi8d32p4x8_qsi4c32p8x8_16x8_sve_i8mm"};
   // 1. Generate random FP32 data 
   std::vector<float> activation_fp32 = generate_random_vector<float>(M * K * T);
   std::vector<float> weight_fp32 = generate_random_vector<float>(N * K * T);
-  std::vector<float> reference_output(M * N);
 
   // 2. Declare FP32 activation tensor, wegith tensor (both kai and q4_0)
   nntrainer::TensorDim activation_dim(1, 1, M, K, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::FP32);
   nntrainer::Tensor activation_tensor(activation_dim);
   activation_tensor.allocate();
-
-  nntrainer::TensorDim kai_dim(1, 1, N, K, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::QINT4);
+  
+  nntrainer::TensorDim kai_dim(1, 1, K, N, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::QINT4);
 
 
   nntrainer::TensorDim q4_0_dim(1, 1, K, N, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::Q4_0);
@@ -289,7 +294,7 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
   microseconds execution_time{};
 
   
-  for (unsigned int j = 0; j < N_K; j ++){
+  for (unsigned int j = 0; j < N_K; j++){
     // j-th ukernel (KAI)
     idx_variant = j;
     nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE, idx_variant);
@@ -304,27 +309,21 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
       
       // Copy i-th acvitvation chunk
       std::memcpy(activation_tensor.getData<float>(), activation_fp32.data() + i * M * K, M * K * sizeof(float));
-      std::cout << "I'm here!" << std::endl;
       // 4. Create Kai weight tensor using QINT4 datatype (creates Kai4Tensor on ARM64)
       
       nntr_kai_quant_qs4c32_f32(N, K, bl, weight_fp32.data() + i * N * K, kai_quant_data.data());
-      
-      std::cout << "I'm here2!" << std::endl;
 
       nntr_kai_qsi8d32p_qsi4c32p_rhs_pack(N, K,
                                           kai_packed_data.data(),
                                           kai_quant_data.data(),
                                           nullptr,
-                                          idx_variant, transB);
-
-                                          
-      std::cout << "I'm here3!" << std::endl;                                          
+                                          idx_variant, transB);                                        
 
       // Allocate and set Kai tensor data with packed weights
+
+      
       
       std::memcpy(kai_weight_tensor.getData(), kai_packed_data.data(), packed_size);
-
-      std::cout << "I'm here4!" << std::endl;
       
       // 4. Run through Tensor::dot() API - goes through FloatTensor::dot() -> dotQInteger()
       auto t0 = high_resolution_clock::now();
@@ -338,7 +337,7 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
       }
 
       if (i == T - 1){
-        std::cout << "QINT4 kernel index " << j << " : " << execution_time.count() << " ms " << std::endl;
+        std::cout << "QINT4 kernel " << uname[j] << " : " << execution_time.count()/T << " ms " << std::endl;
       }
     }
   }
@@ -367,7 +366,7 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
     }
 
     if (i == T - 1){
-      std::cout << "Q40 kernel : " << execution_time.count() << " ms " << std::endl;
+      std::cout << "Q40 kernel : " << execution_time.count()/T << " ms " << std::endl;
     }
   }
  
@@ -377,28 +376,28 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
 
 
 #if defined(ENABLE_FP16) && defined(__aarch64__)
-TEST(Q40_vs_kai, GEMM_1x2560x4096) {
-  test_q40_vs_kai(1024, 2560, 4096);
-}
-
-TEST(Q40_vs_kai, GEMM_1000x2560x4096) {
+TEST(Q40_vs_kai, GEMM_8192x2560x4096) {
   test_q40_vs_kai(8192, 2560, 4096);
 }
 
-TEST(Q40_vs_kai, GEMM_1x2560x1024) {
-  test_q40_vs_kai(1024, 2560, 1024);
+TEST(Q40_vs_kai, GEMV_1x2560x4096) {
+  test_q40_vs_kai(1, 2560, 4096);
 }
 
-TEST(Q40_vs_kai, GEMM_1000x2560x1024) {
-  test_q40_vs_kai(1024, 2560, 1024);
+TEST(Q40_vs_kai, GEMM_8192x2560x1024) {
+  test_q40_vs_kai(8192, 2560, 1024);
 }
 
-TEST(Q40_vs_kai, GEMM_1x2560x9728) {
-  test_q40_vs_kai(1, 2560, 9728);
+TEST(Q40_vs_kai, GEMV_1x2560x1024) {
+  test_q40_vs_kai(1, 2560, 1024);
 }
 
-TEST(Q40_vs_kai, GEMM_1000x2560x9728) {
-  test_q40_vs_kai(1024, 2560, 9728);
+TEST(Q40_vs_kai, GEMM_8192x4096x2560) {
+  test_q40_vs_kai(8192, 4096, 2560);
+}
+
+TEST(Q40_vs_kai, GEMV_1x4096x2560) {
+  test_q40_vs_kai(1, 4096, 2560);
 }
 
 

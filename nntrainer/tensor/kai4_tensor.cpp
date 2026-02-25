@@ -87,7 +87,7 @@ void Kai4Tensor::allocate() {
 
     // Use calculateSize() to determine allocation size
     size_t alloc_size = size();
-
+    
     mem_data = new MemoryData((void *)(new uint8_t[alloc_size]{}));
     data = std::shared_ptr<MemoryData>(mem_data, [](auto *mem_data) {
       delete[] mem_data->template getAddr<uint8_t>();
@@ -126,7 +126,7 @@ size_t Kai4Tensor::size() const {
   // If not set, we can't compute size accurately
   
   // 
-  return nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(height(), width(), _idx_variant, transB);
+  return nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(width(), height(), _idx_variant, transB);
 #else
   return getDim().getDataLen();
 #endif

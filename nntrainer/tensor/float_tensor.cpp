@@ -1014,7 +1014,7 @@ Tensor &FloatTensor::dotQInteger(Tensor const &input, Tensor &output,
   unsigned int M = getDim().height();
   unsigned int K = getDim().width();
   unsigned int N = input.getDim().width();
-
+  
 #ifndef ENABLE_OPENCL
 #if defined(ENABLE_FP16) && defined(__aarch64__)
   // On ARM64 with FP16, QINT4 uses Kai4Tensor (check datatype or q_scheme)
@@ -1039,7 +1039,6 @@ Tensor &FloatTensor::dotQInteger(Tensor const &input, Tensor &output,
       -std::numeric_limits<float>::infinity(),  // lower_bound
       std::numeric_limits<float>::infinity()    // upper_bound
     );
-    std::cout << "here?" << std::endl;
   } else {
     throw std::runtime_error(
       "Error: QINT4 Dot on CPU only supports PER_CHANNEL_AFFINE");
