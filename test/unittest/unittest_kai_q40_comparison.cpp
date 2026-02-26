@@ -38,7 +38,7 @@ using std::chrono::seconds;
 
 #define QK4_0 32
 
-#define N_K 8
+#define N_K 5
 
 /**
  * @brief FP16 to float conversion (using memcpy to avoid strict-aliasing warnings)
@@ -167,9 +167,8 @@ static void test_q40_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   float mse = compute_mse(reference_output, q4_0_vec);
   
   // Same tolerance as kernel tests
-  const float base_eps = 1.5e-5;
-  const float gemv_multiplier = (M == 1 && K == 3072 && N == 512) ? 7.0f : 1.0f;
-  const float tolerance = base_eps * gemv_multiplier * M * K * N;
+  const float base_eps = 1e-5;
+  const float tolerance = base_eps * M * K * N;
   
   EXPECT_LT(mse, tolerance) 
     << "Tensor::dot() API: MSE too high for M=" << M << ", K=" << K << ", N=" << N
@@ -180,7 +179,7 @@ static void test_q40_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
  * @brief Test Kai through Tensor::dot() API (full integration)
  */
 #if defined(ENABLE_FP16) && defined(__aarch64__)
-static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int N) {
+static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int N, unsigned int idx) {
   // 1. Generate random FP32 data
   std::vector<float> activation_fp32 = generate_random_vector<float>(M * K);
   std::vector<float> weight_fp32 = generate_random_vector<float>(N * K);
@@ -199,7 +198,7 @@ static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   
   // 4. Create Kai weight tensor using QINT4 datatype (creates Kai4Tensor on ARM64)
   nntrainer::TensorDim kai_dim(1, 1, N, K, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::QINT4);
-  nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE);
+  nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE, idx);
   
   // Quantize using Kai's native block-32 quantization
   const size_t bl = 32;
@@ -209,7 +208,7 @@ static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   nntr_kai_quant_qs4c32_f32(N, K, bl, weight_fp32.data(), kai_quant_data.data());
   
   // RHS Packing for offline-packed Kai API
-  uint32_t idx_variant = 4;  // Using variant 4
+  uint32_t idx_variant = idx;  // Using variant 4
   bool transB = true;
 
   size_t packed_size = nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(N, K, idx_variant, transB);
@@ -236,7 +235,7 @@ static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   float mse = compute_mse(reference_output, kai_vec);
   
   // Same tolerance as kernel tests
-  constexpr float eps = 1.5e-5;
+  constexpr float eps = 1e-5;
   const float tolerance = eps * M * K * N;
   
   EXPECT_LT(mse, tolerance) 
@@ -376,12 +375,37 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
 
 
 #if defined(ENABLE_FP16) && defined(__aarch64__)
+TEST(Q40_acc, GEMM_8192x2560x4096) {
+  test_q40_tensor_dot_api(8192, 2560, 4096);
+}
+
+TEST(KAI_acc0, GEMM_8192x2560x4096) {
+  test_kai_tensor_dot_api(8192, 2560, 4096, 0);
+}
+
+TEST(KAI_acc1, GEMM_8192x2560x4096) {
+  test_kai_tensor_dot_api(8192, 2560, 4096, 1);
+}
+
+TEST(KAI_acc2, GEMM_8192x2560x4096) {
+  test_kai_tensor_dot_api(8192, 2560, 4096, 2);
+}
+
+TEST(KAI_acc3, GEMM_8192x2560x4096) {
+  test_kai_tensor_dot_api(8192, 2560, 4096, 3);
+}
+
+TEST(KAI_acc4, GEMM_8192x2560x4096) {
+  test_kai_tensor_dot_api(8192, 2560, 4096, 4);
+}
+
+
 TEST(Q40_vs_kai, GEMM_8192x2560x4096) {
   test_q40_vs_kai(8192, 2560, 4096);
 }
 
 TEST(Q40_vs_kai, GEMV_1x2560x4096) {
-  test_q40_vs_kai(1, 2560, 4096);
+  test_q40_vs_kai(1, 2560, 4096 );
 }
 
 TEST(Q40_vs_kai, GEMM_8192x2560x1024) {

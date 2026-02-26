@@ -1102,7 +1102,7 @@ void run_gemm_benchmark_comparison(const uint32_t M, const uint32_t K,
                                    const uint32_t N,
                                    const uint32_t warmup_iters = 3,
                                    const uint32_t test_iters = 5,
-                                   bool print = false) {
+                                   bool print = true) {
   nntrainer::init_backend();
 
   if (print) {
