@@ -480,7 +480,7 @@ void nntr_kai_gemm_qai8dxp_qsi4cxp_olp(size_t m, size_t n, size_t k,
                                        uint32_t idx_variant, bool transB,
                                        float lower_bound, float upper_bound) {
   if (m == 1) {
-    return nntr_kai_gemm_qai8dxp_qsi4cxp_olp_single_thread(
+    return nntr_kai_gemm_qai8dxp_qsi4cxp_olp_n_parallel(
       m, n, k, lhs_native_mtx_f32, rhs_packed_mtx_qs4cx, dst_act_mtx_f32,
       idx_variant, transB, lower_bound, upper_bound);
   } else {

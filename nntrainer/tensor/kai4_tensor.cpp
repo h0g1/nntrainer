@@ -4,7 +4,7 @@
  * @date	12 January 2026
  * @brief	This is Kai4Tensor class for Kai library integration.
  * @see		https://github.com/nnstreamer/nntrainer
- * @author	Hyeonggwon <hyeonggwon@samsung.com>
+ * @author h0g1 <h0g1.hong@samsung.com>
  * @bug		No known bugs except for NYI items
  */
 
@@ -19,12 +19,7 @@
 #include <cpu_backend/arm/kleidiai_interface.h>
 #endif
 
-#if defined(ENABLE_FP16) && defined(__aarch64__)
-#include <kai_rhs_pack_nxk_qsi4c32pscalef16_qsu4c32s16s0.h>
-#include <kai_lhs_quant_pack_qsi8d32p_f32.h>
-#include <kai_matmul_clamp_f32_qsi8d32p_qsi4c32p_interface.h>
-#include <cpu_backend/arm/kai/matmul_clamp_f32_qsi8d32p_qsi4c32p/kai_matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod.h>
-#endif
+
 
 #include <cstring>
 #include <limits>
@@ -37,7 +32,7 @@ namespace nntrainer {
 Kai4Tensor::Kai4Tensor(std::string name_, Tformat fm, QScheme qscheme_) : 
   TensorBase(name_, fm, Tdatatype::QINT4), qscheme(qscheme_) {
   offset = 0;
-  _idx_variant = 4; //Default set to matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod
+  _idx_variant = 4; //Default idx
   transB = true;
 }
 
@@ -50,14 +45,12 @@ Kai4Tensor::Kai4Tensor(const TensorDim &d, bool alloc_now, Initializer init,
     << "Kai4Tensor must be 2 dimensional tensor (NxK) with batch size 1 and "
        "channel 1";
   
-  NNTR_THROW_IF(d.width() % 32 != 0, std::invalid_argument)
-      << "Kai4Tensor width must be divisible by 32 (default block size)";
 
   if (alloc_now) {
     allocate();
   }
   offset = 0;
-  _idx_variant = idx_variant; //Default set to matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod
+  _idx_variant = idx_variant; // Set idx
   transB = true;
 }
 
@@ -126,7 +119,7 @@ size_t Kai4Tensor::size() const {
   // If not set, we can't compute size accurately
   
   // 
-  return nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(width(), height(), _idx_variant, transB);
+  return nntr_kai_get_rhs_packed_size_qsi4cxp_qs4cxs1s0(width(), height(), _idx_variant, transB);
 #else
   return getDim().getDataLen();
 #endif

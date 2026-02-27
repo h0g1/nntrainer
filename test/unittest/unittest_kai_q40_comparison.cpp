@@ -8,15 +8,19 @@
  * @bug    No known bugs except for NYI items
  */
 
+#include "kleidiai_interface.h"
+
 #include <gtest/gtest.h>
 #include <tensor.h>
-#include <cpu_backend.h>
-#if defined(ENABLE_FP16) && defined(__aarch64__)
-#include <cpu_backend/arm/kleidiai_interface.h>
-#include <cpu_backend/arm/arm_compute_backend.h>
 #include <kai4_tensor.h>
 #include <q4_0_tensor.h>
-#endif
+#include <cpu_backend.h>
+#include <fallback_internal.h>
+
+
+
+
+
 #include <q4_0_utils.h>
 #include <random>
 #include <vector>
@@ -38,7 +42,7 @@ using std::chrono::seconds;
 
 #define QK4_0 32
 
-#define N_K 5
+#define N_K 8
 
 /**
  * @brief FP16 to float conversion (using memcpy to avoid strict-aliasing warnings)
@@ -79,7 +83,7 @@ static inline float fp16_to_fp32(uint16_t h) {
  * @brief Generate random FP32 vector
  */
 template <typename T>
-static std::vector<T> generate_random_vector(size_t size, float min_val = -0.5f, float max_val = 0.5f) {
+static std::vector<T> generate_random_vector(size_t size, float min_val = -1.0f, float max_val = 1.0f) {
   std::mt19937 gen(42);
   std::uniform_real_distribution<float> dist(min_val, max_val);
   std::vector<T> vec(size);
@@ -197,27 +201,29 @@ static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   std::memcpy(activation_tensor.getData<float>(), activation_fp32.data(), M * K * sizeof(float));
   
   // 4. Create Kai weight tensor using QINT4 datatype (creates Kai4Tensor on ARM64)
-  nntrainer::TensorDim kai_dim(1, 1, N, K, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::QINT4);
+  nntrainer::TensorDim kai_dim(1, 1, K, N, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::QINT4);
   nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE, idx);
   
-  // Quantize using Kai's native block-32 quantization
-  const size_t bl = 32;
-  const size_t num_blocks = (K / bl);
-  const size_t bytes_per_block = sizeof(uint16_t) + bl / 2;
-  std::vector<uint8_t> kai_quant_data(N * num_blocks * bytes_per_block);
-  nntr_kai_quant_qs4c32_f32(N, K, bl, weight_fp32.data(), kai_quant_data.data());
+  // Quantize using Kai's native channel-wise quantization
+  const size_t rhs_native_size_qs4cx = static_cast<size_t>(N) * (((K + 2 - 1) / 2) * 2 / 2) * sizeof(uint8_t); //nxk
+  const size_t rhs_scales_size_f32 = N * sizeof(float);
+
+  std::vector<uint8_t> kai_quant_data(rhs_native_size_qs4cx);
+  std::vector<uint8_t> kai_quant_scale(rhs_scales_size_f32);
+
+  nntrainer::nntr_quant_qs4cx_f32(static_cast<size_t> (N), static_cast<size_t> (K), (void *)weight_fp32.data(), (void *)kai_quant_data.data(), kai_quant_scale.data(), true);
   
   // RHS Packing for offline-packed Kai API
   uint32_t idx_variant = idx;  // Using variant 4
   bool transB = true;
 
-  size_t packed_size = nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(N, K, idx_variant, transB);
+  size_t packed_size = nntr_kai_get_rhs_packed_size_qsi4cxp_qs4cxs1s0(static_cast<size_t> (N), static_cast<size_t> (K), idx_variant, transB);
   std::vector<uint8_t> kai_packed_data(packed_size);
 
-  nntr_kai_qsi8d32p_qsi4c32p_rhs_pack(N, K,
+  nntr_kai_qsi4cxp_qs4cxs1s0_rhs_pack(N, K,
                                        kai_packed_data.data(),
                                        kai_quant_data.data(),
-                                       nullptr,
+                                       kai_quant_scale.data(),
                                        idx_variant, transB);
 
   // Allocate and set Kai tensor data with packed weights
@@ -248,7 +254,7 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
 
   const int T = 30; // T iterations
   
-  std::string uname[8] = {"matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4x4_1x4_neon_dotprod", "matmul_clamp_f32_qsi8d32p1x4_qsi4c32p8x4_1x8_sve_dotprod", "matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod", "matmul_clamp_f32_qsi8d32p1x8_qsi4c32p8x8_1x8_sve_dotprod", "matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod", "matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm", "matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_8x4x32_neon_i8mm", "matmul_clamp_f32_qsi8d32p4x8_qsi4c32p8x8_16x8_sve_i8mm"};
+  std::string uname[8] = {"matmul_clamp_f32_qai8dxp1x8_qsi4cxp4x8_1x4x32_neon_dotprod", "matmul_clamp_f32_qai8dxp1x8_qsi4cxp8x8_1x8x32_neon_dotprod", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp4x8_4x4x32_neon_i8mm", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp4x8_8x4x32_neon_i8mm", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp8x8_4x8x32_neon_i8mm", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp8x8_8x8x32_neon_i8mm", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp8x4_8x8x32_neon_dotprod", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp4x4_16x4x32_neon_dotprod"};
   // 1. Generate random FP32 data 
   std::vector<float> activation_fp32 = generate_random_vector<float>(M * K * T);
   std::vector<float> weight_fp32 = generate_random_vector<float>(N * K * T);
@@ -266,11 +272,10 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
   q4_0_weight_tensor.allocate();
 
   // 3. Declare quantization & packing related ones
-  const size_t bl = 32;
-  const size_t num_blocks = (K / bl);
-  const size_t bytes_per_block = sizeof(uint16_t) + bl / 2;
+  //const size_t num_blocks = K;
+  //const size_t bytes_per_block = sizeof(uint16_t) + N / 2;
 
-  std::vector<uint8_t> kai_quant_data(N * num_blocks * bytes_per_block);
+  
   size_t packed_size;
   uint32_t idx_variant;
   bool transB = true;
@@ -289,6 +294,13 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
 
   kai_output_tensor.allocate();
   q4_0_output_tensor.allocate();
+  
+
+  const size_t rhs_native_size_qs4cx = static_cast<size_t>(N) * (((K + 2 - 1) / 2) * 2 / 2) * sizeof(uint8_t); //nxk
+  const size_t rhs_scales_size_f32 = N * sizeof(float);
+
+  std::vector<uint8_t> kai_quant_data(rhs_native_size_qs4cx);
+  std::vector<uint8_t> kai_quant_scale(rhs_scales_size_f32);
 
   microseconds execution_time{};
 
@@ -299,9 +311,11 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
     nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE, idx_variant);
     kai_weight_tensor.allocate();
 
-    packed_size = nntr_kai_get_rhs_packed_size_qsi8d32p_qsi4c32p(N, K, idx_variant, transB);
+    packed_size = nntr_kai_get_rhs_packed_size_qsi4cxp_qs4cxs1s0(N, K, idx_variant, transB);
 
     std::vector<uint8_t> kai_packed_data(packed_size);
+
+    
     
     for (unsigned int i = 0; i < T; i ++){
       // i-th iteraiton
@@ -310,12 +324,12 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
       std::memcpy(activation_tensor.getData<float>(), activation_fp32.data() + i * M * K, M * K * sizeof(float));
       // 4. Create Kai weight tensor using QINT4 datatype (creates Kai4Tensor on ARM64)
       
-      nntr_kai_quant_qs4c32_f32(N, K, bl, weight_fp32.data() + i * N * K, kai_quant_data.data());
+      nntrainer::nntr_quant_qs4cx_f32(N, K, weight_fp32.data() + i * N * K, kai_quant_data.data(), kai_quant_scale.data());
 
-      nntr_kai_qsi8d32p_qsi4c32p_rhs_pack(N, K,
+      nntr_kai_qsi4cxp_qs4cxs1s0_rhs_pack(N, K,
                                           kai_packed_data.data(),
                                           kai_quant_data.data(),
-                                          nullptr,
+                                          kai_quant_scale.data(),
                                           idx_variant, transB);                                        
 
       // Allocate and set Kai tensor data with packed weights
@@ -398,6 +412,167 @@ TEST(KAI_acc3, GEMM_8192x2560x4096) {
 TEST(KAI_acc4, GEMM_8192x2560x4096) {
   test_kai_tensor_dot_api(8192, 2560, 4096, 4);
 }
+
+TEST(KAI_acc5, GEMM_8192x2560x4096) {
+  test_kai_tensor_dot_api(8192, 2560, 4096, 5);
+}
+
+TEST(KAI_acc6, GEMM_8192x2560x4096) {
+  test_kai_tensor_dot_api(8192, 2560, 4096, 6);
+}
+
+TEST(KAI_acc7, GEMM_8192x2560x4096) {
+  test_kai_tensor_dot_api(8192, 2560, 4096, 7);
+}
+
+
+TEST(Q40_acc_2, GEMM_1x2560x4096) {
+  test_q40_tensor_dot_api(1, 2560, 4096);
+}
+
+TEST(KAI_acc0_2, GEMM_1x2560x4096) {
+  test_kai_tensor_dot_api(1, 2560, 4096, 0);
+}
+
+TEST(KAI_acc1_2, GEMM_1x2560x4096) {
+  test_kai_tensor_dot_api(1, 2560, 4096, 1);
+}
+
+TEST(KAI_acc2_2, GEMM_1x2560x4096) {
+  test_kai_tensor_dot_api(1, 2560, 4096, 2);
+}
+
+TEST(KAI_acc3_2, GEMM_1x2560x4096) {
+  test_kai_tensor_dot_api(1, 2560, 4096, 3);
+}
+
+TEST(KAI_acc4_2, GEMM_1x2560x4096) {
+  test_kai_tensor_dot_api(1, 2560, 4096, 4);
+}
+
+TEST(KAI_acc5_2, GEMM_1x2560x4096) {
+  test_kai_tensor_dot_api(1, 2560, 4096, 5);
+}
+
+TEST(KAI_acc6_2, GEMM_1x2560x4096) {
+  test_kai_tensor_dot_api(1, 2560, 4096, 6);
+}
+
+TEST(KAI_acc7_2, GEMM_1x2560x4096) {
+  test_kai_tensor_dot_api(1, 2560, 4096, 7);
+}
+
+
+TEST(Q40_acc_3, GEMM_8192x2560x1024) {
+  test_q40_tensor_dot_api(8192, 2560, 1024);
+}
+
+TEST(KAI_acc0_3, GEMM_8192x2560x1024) {
+  test_kai_tensor_dot_api(8192, 2560, 1024, 0);
+}
+
+TEST(KAI_acc1_3, GEMM_8192x2560x1024) {
+  test_kai_tensor_dot_api(8192, 2560, 1024, 1);
+}
+
+TEST(KAI_acc2_3, GEMM_8192x2560x1024) {
+  test_kai_tensor_dot_api(8192, 2560, 1024, 2);
+}
+
+TEST(KAI_acc3_3, GEMM_8192x2560x1024) {
+  test_kai_tensor_dot_api(8192, 2560, 1024, 3);
+}
+
+TEST(KAI_acc4_3, GEMM_8192x2560x1024) {
+  test_kai_tensor_dot_api(8192, 2560, 1024, 4);
+}
+
+TEST(KAI_acc5_3, GEMM_8192x2560x1024) {
+  test_kai_tensor_dot_api(8192, 2560, 1024, 5);
+}
+
+TEST(KAI_acc6_3, GEMM_8192x2560x1024) {
+  test_kai_tensor_dot_api(8192, 2560, 1024, 6);
+}
+
+TEST(KAI_acc7_3, GEMM_8192x2560x1024) {
+  test_kai_tensor_dot_api(8192, 2560, 1024, 7);
+}
+
+TEST(Q40_acc_4, GEMM_1x2560x1024) {
+  test_q40_tensor_dot_api(1, 2560, 1024);
+}
+
+TEST(KAI_acc0_4, GEMM_1x2560x1024) {
+  test_kai_tensor_dot_api(1, 2560, 1024, 0);
+}
+
+TEST(KAI_acc1_4, GEMM_1x2560x1024) {
+  test_kai_tensor_dot_api(1, 2560, 1024, 1);
+}
+
+TEST(KAI_acc2_4, GEMM_1x2560x1024) {
+  test_kai_tensor_dot_api(1, 2560, 1024, 2);
+}
+
+TEST(KAI_acc3_4, GEMM_1x2560x1024) {
+  test_kai_tensor_dot_api(1, 2560, 1024, 3);
+}
+
+TEST(KAI_acc4_4, GEMM_1x2560x1024) {
+  test_kai_tensor_dot_api(1, 2560, 1024, 4);
+}
+
+TEST(KAI_acc5_4, GEMM_1x2560x1024) {
+  test_kai_tensor_dot_api(1, 2560, 1024, 5);
+}
+
+TEST(KAI_acc6_4, GEMM_1x2560x1024) {
+  test_kai_tensor_dot_api(1, 2560, 1024, 6);
+}
+
+TEST(KAI_acc7_4, GEMM_1x2560x1024) {
+  test_kai_tensor_dot_api(1, 2560, 1024, 7);
+}
+
+
+TEST(Q40_acc_5, GEMM_8192x4096x2560) {
+  test_q40_tensor_dot_api(8192, 4096, 2560);
+}
+
+TEST(KAI_acc0_5, GEMM_8192x4096x2560) {
+  test_kai_tensor_dot_api(8192, 4096, 2560, 0);
+}
+
+TEST(KAI_acc1_5, GEMM_8192x4096x2560) {
+  test_kai_tensor_dot_api(8192, 4096, 2560, 1);
+}
+
+TEST(KAI_acc2_5, GEMM_8192x4096x2560) {
+  test_kai_tensor_dot_api(8192, 4096, 2560, 2);
+}
+
+TEST(KAI_acc3_5, GEMM_8192x4096x2560) {
+  test_kai_tensor_dot_api(8192, 4096, 2560, 3);
+}
+
+TEST(KAI_acc4_5, GEMM_8192x4096x2560) {
+  test_kai_tensor_dot_api(8192, 4096, 2560, 4);
+}
+
+TEST(KAI_acc5_5, GEMM_8192x4096x2560) {
+  test_kai_tensor_dot_api(8192, 4096, 2560, 5);
+}
+
+TEST(KAI_acc6_5, GEMM_8192x4096x2560) {
+  test_kai_tensor_dot_api(8192, 4096, 2560, 6);
+}
+
+TEST(KAI_acc7_5, GEMM_8192x4096x2560) {
+  test_kai_tensor_dot_api(8192, 4096, 2560, 7);
+}
+
+
 
 
 TEST(Q40_vs_kai, GEMM_8192x2560x4096) {

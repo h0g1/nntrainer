@@ -1029,7 +1029,7 @@ Tensor &FloatTensor::dotQInteger(Tensor const &input, Tensor &output,
     uint32_t idx_variant = input.getKernelVariant();
     
     // Call Kai block-32 offline-packed GEMM
-    nntr_kai_gemm_qsi8d32p_qsi4c32p_olp(
+    nntr_kai_gemm_qai8dxp_qsi4cxp_olp(
       M, N, K,
       (void *)data,        // LHS (activations) - will be packed internally
       (void *)mdata,       // RHS (weights) - assumed already packed in block-32 format
