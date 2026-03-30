@@ -265,7 +265,7 @@ int main(int argc, char *argv[]) {
                system_tail_prompt.c_str());
 #else
     model->run(input_text, do_sample, system_head_prompt, system_tail_prompt);
-    model->save_weight("./nntr_qwen3-0.6b-q6k-qint4-qint4-fp32-arm.bin");
+    model->save_weight("./nntr_qwen3_1_7b_qint4_embdq6k.bin");
 #endif
 #ifdef PROFILE
     stop_and_print_peak();

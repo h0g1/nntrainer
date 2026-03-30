@@ -693,7 +693,7 @@ void NeuralNetwork::load(const std::string &file_path,
     for (auto weight : weights) {
       size_t size = weight->getVariable().getMemoryBytes();
       auto tensor_data_type = weight->getDim().getDataType();
-      /*
+      
       if (tensor_data_type == TensorDim::DataType::QINT4){
         //QINT4 but read as Q4_0
         uint32_t K = weight->getVariable().height();
@@ -702,7 +702,7 @@ void NeuralNetwork::load(const std::string &file_path,
         //size = N * K;
         size = W_q40.getMemoryBytes();
       }
-      */
+      
       //std::cout << start_from << std::endl;
       weight->getVariableRef().setFileOffset(start_from);
       ///@todo instead of checking the data type,
