@@ -1040,6 +1040,9 @@ Tensor &FloatTensor::dotQInteger(Tensor const &input, Tensor &output,
       std::numeric_limits<float>::infinity()    // upper_bound
     );
   } else {
+    if (input.q_scheme() == QScheme::PER_TENSOR_AFFINE){
+      std::cout << "Hello!" << std::endl;
+    }
     throw std::runtime_error(
       "Error: QINT4 Dot on CPU only supports PER_CHANNEL_AFFINE");
   }
