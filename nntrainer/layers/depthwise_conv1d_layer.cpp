@@ -22,6 +22,7 @@
 #include <cstring>
 #include <limits>
 #include <string>
+#include <iostream>
 
 #include <depthwise_conv1d_layer.h>
 #include <layer_context.h>
@@ -139,6 +140,8 @@ void DepthwiseConv1DLayer::finalize(InitLayerContext &context) {
   unsigned int stride = std::get<props::Stride>(conv_props).get();
   unsigned int dilation = std::get<props::Dilation>(conv_props).get();
 
+  
+
   // For depthwise, filters must equal input channels
   unsigned int filter_size = std::get<props::FilterSize>(conv_props).get();
   NNTR_THROW_IF(filter_size != channels, std::invalid_argument)
@@ -148,6 +151,7 @@ void DepthwiseConv1DLayer::finalize(InitLayerContext &context) {
   padding = std::get<props::Padding1D>(conv_props)
               .compute(in_dim, kernel_size, stride, dilation);
 
+ 
   auto in_t_type = in_dim.getTensorType();
   in_t_type.data_type = context.getWeightDataType();
 
@@ -244,10 +248,14 @@ void DepthwiseConv1DLayer::forwarding(RunLayerContext &context, bool training) {
   unsigned int out_width = out_dim.width();
   unsigned int pad_left = padding[0];
 
+
   float *input_data = input_.getData<float>();
   float *output_data = hidden_.getData<float>();
   const float *weight_data = filter.getData<float>();
 
+  float *raw_in = input_.getData<float>();
+
+   
   causal_depthwise_conv1d_k3_fp32(input_data, weight_data, output_data, batch,
                                   channels, in_width);
   /*

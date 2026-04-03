@@ -1230,7 +1230,7 @@ void ele_add(const unsigned int N, const float *X, const float *Y, float *Z,
 void causal_depthwise_conv1d_k3_fp32(
   float *input,   // [B,C,1,T]
   const float *weight,  // [C,1,1,3]
-  float *output,        // [B,C,1,T]
+  float *output,        // [B,C,1,T+2]
   unsigned int B,
   unsigned int C,
   unsigned int T) {
@@ -1257,6 +1257,7 @@ void causal_depthwise_conv1d_k3_fp32(
       unsigned int t = 2;
 
       // SIMD main loop
+      
       for (; t + VEC <= T; t += VEC) {
         __m256 xv0 = _mm256_loadu_ps(x + t - 2);
         __m256 xv1 = _mm256_loadu_ps(x + t - 1);
@@ -1269,10 +1270,17 @@ void causal_depthwise_conv1d_k3_fp32(
         _mm256_storeu_ps(y + t, acc);
       }
 
-      // tail
-      for (; t < T; ++t) {
-        y[t] = x[t - 2] * w[0] + x[t - 1] * w[1] + x[t] * w[2];
+
+      for (; t < T; t += 1) {
+        y[t] = x[t-2] * w[0] + x[t-1] * w[1] + x[t] * w[2];
       }
+
+      // t = T
+      y[T] = x[T-2] * w[0] + x[T-1] * w[1];
+
+      // t = T - 1
+      y[T+1] = x[T-1] * w[0];
+
     }
   }
 }
