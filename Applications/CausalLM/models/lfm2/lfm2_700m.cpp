@@ -266,7 +266,7 @@ Lfm2CausalLM::createConvBlock(const int layer_id,
   }));
   Tensor conv_op_3_out = conv_op_3({chunk_0, chunk_2});
 
-  LayerHandle conv_op_4(createLayer("causal_conv1d", {
+  LayerHandle conv_op_4(createLayer("depthwiseconv1d", {
     withKey("name", prefix + "_conv_conv"),
     withKey("filters", 1536),
     withKey("kernel_size", 3),

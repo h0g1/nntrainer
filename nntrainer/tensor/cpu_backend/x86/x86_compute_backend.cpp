@@ -465,10 +465,10 @@ void causal_depthwise_conv1d_k3_fp32(float *input,
                                      const float *packed_weight,
                                      float *output,
                                      unsigned int B,
-                                     unsigned int H,
-                                     unsigned int W){
+                                     unsigned int C,
+                                     unsigned int T){
   nntrainer::avx2::causal_depthwise_conv1d_k3_fp32(
-    input, packed_weight, output, B, H, W);
+    input, packed_weight, output, B, C, T);
 }
 
 void compute_rotary_emb_value(unsigned int width, unsigned int dim,

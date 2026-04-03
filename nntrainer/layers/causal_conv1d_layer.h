@@ -50,6 +50,7 @@ public:
 
 
 
+  void setProperty(const std::vector<std::string> &values) override;
 
   inline static const std::string type = "causal_conv1d";
 
@@ -57,6 +58,9 @@ private:
   enum CausalConv1DParams { weight = 0 };
   static constexpr size_t SINGLE_INOUT_IDX = 0;
   static constexpr unsigned int KERNEL_SIZE = 3;
+  std::tuple<props::FilterSize, props::KernelSize, props::Stride,
+             props::Padding1D, props::Dilation>
+    conv_props;
 
   std::array<unsigned int, 1> weight_idx;
 

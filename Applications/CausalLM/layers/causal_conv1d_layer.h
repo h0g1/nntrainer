@@ -30,9 +30,12 @@ public:
 
   bool supportBackwarding() const override { return false; }
 
+
+
   inline static const std::string type = "causal_conv1d";
 
 private:
+  
   enum CausalConv1DParams { weight = 0 };
   static constexpr size_t SINGLE_INOUT_IDX = 0;
   static constexpr unsigned int KERNEL_SIZE = 3;

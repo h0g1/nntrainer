@@ -629,7 +629,7 @@ extern void nntr_gemm_qsi8d32p_qsi4c32p_packed(
 extern void causal_depthwise_conv1d_k3_fp32(
   float *input, const float *packed_weight,
   float *output, unsigned int B,
-  unsigned int H, unsigned int W);
+  unsigned int C, unsigned int T);
 /**
  * @brief Initialization of ggml backend
  */
