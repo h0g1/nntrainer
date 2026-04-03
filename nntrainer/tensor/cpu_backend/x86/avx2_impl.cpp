@@ -1234,55 +1234,146 @@ void causal_depthwise_conv1d_k3_fp32(
   unsigned int B,
   unsigned int C,
   unsigned int T) {
-
   constexpr unsigned int VEC = 8;
+  const unsigned int Tout = T + 2;
 
   for (unsigned int b = 0; b < B; ++b) {
-    for (unsigned int c = 0; c < C; ++c) {
-      float *x = input + (static_cast<size_t>(b) * C + c) * T;
-      float *y = output + (static_cast<size_t>(b) * C + c) * T;
-      const float *w = weight + static_cast<size_t>(c) * 3;
+    size_t in_base  = (size_t)b * C * T;
+    size_t out_base = (size_t)b * C * Tout;
 
-      const __m256 w0 = _mm256_set1_ps(w[0]);
-      const __m256 w1 = _mm256_set1_ps(w[1]);
-      const __m256 w2 = _mm256_set1_ps(w[2]);
+    unsigned int c = 0;
 
-      // t = 0
-      y[0] = x[0] * w[2];
+    // ===== channel unroll (2개씩) =====
+    for (; c + 1 < C; c += 2) {
+      float *x0 = input  + in_base  + (size_t)c * T;
+      float *x1 = input  + in_base  + (size_t)(c + 1) * T;
 
-      // t = 1
-      if (T > 1)
-        y[1] = x[0] * w[1] + x[1] * w[2];
+      float *y0 = output + out_base + (size_t)c * Tout;
+      float *y1 = output + out_base + (size_t)(c + 1) * Tout;
+
+      const float *w0p = weight + (size_t)c * 3;
+      const float *w1p = weight + (size_t)(c + 1) * 3;
+
+      const __m256 w00 = _mm256_set1_ps(w0p[0]);
+      const __m256 w01 = _mm256_set1_ps(w0p[1]);
+      const __m256 w02 = _mm256_set1_ps(w0p[2]);
+
+      const __m256 w10 = _mm256_set1_ps(w1p[0]);
+      const __m256 w11 = _mm256_set1_ps(w1p[1]);
+      const __m256 w12 = _mm256_set1_ps(w1p[2]);
+
+      // prologue
+      if (T > 0) {
+        y0[0] = x0[0] * w0p[2];
+        y1[0] = x1[0] * w1p[2];
+      }
+
+      if (T > 1) {
+        y0[1] = x0[0] * w0p[1] + x0[1] * w0p[2];
+        y1[1] = x1[0] * w1p[1] + x1[1] * w1p[2];
+      }
 
       unsigned int t = 2;
 
-      // SIMD main loop
-      
+      // ===== t loop unroll (16개씩) =====
+      for (; t + 2 * VEC <= T; t += 2 * VEC) {
+
+        // ---- channel c ----
+        __m256 xv0 = _mm256_loadu_ps(x0 + t - 2);
+        __m256 xv1 = _mm256_loadu_ps(x0 + t - 1);
+        __m256 xv2 = _mm256_loadu_ps(x0 + t);
+
+        __m256 acc = _mm256_mul_ps(xv0, w00);
+        acc = _mm256_fmadd_ps(xv1, w01, acc);
+        acc = _mm256_fmadd_ps(xv2, w02, acc);
+        _mm256_storeu_ps(y0 + t, acc);
+
+        __m256 xv0b = _mm256_loadu_ps(x0 + t + 6);
+        __m256 xv1b = _mm256_loadu_ps(x0 + t + 7);
+        __m256 xv2b = _mm256_loadu_ps(x0 + t + 8);
+
+        __m256 accb = _mm256_mul_ps(xv0b, w00);
+        accb = _mm256_fmadd_ps(xv1b, w01, accb);
+        accb = _mm256_fmadd_ps(xv2b, w02, accb);
+        _mm256_storeu_ps(y0 + t + 8, accb);
+
+        // ---- channel c+1 ----
+        __m256 xv0_1 = _mm256_loadu_ps(x1 + t - 2);
+        __m256 xv1_1 = _mm256_loadu_ps(x1 + t - 1);
+        __m256 xv2_1 = _mm256_loadu_ps(x1 + t);
+
+        __m256 acc1 = _mm256_mul_ps(xv0_1, w10);
+        acc1 = _mm256_fmadd_ps(xv1_1, w11, acc1);
+        acc1 = _mm256_fmadd_ps(xv2_1, w12, acc1);
+        _mm256_storeu_ps(y1 + t, acc1);
+
+        __m256 xv0b_1 = _mm256_loadu_ps(x1 + t + 6);
+        __m256 xv1b_1 = _mm256_loadu_ps(x1 + t + 7);
+        __m256 xv2b_1 = _mm256_loadu_ps(x1 + t + 8);
+
+        __m256 accb1 = _mm256_mul_ps(xv0b_1, w10);
+        accb1 = _mm256_fmadd_ps(xv1b_1, w11, accb1);
+        accb1 = _mm256_fmadd_ps(xv2b_1, w12, accb1);
+        _mm256_storeu_ps(y1 + t + 8, accb1);
+      }
+
+      // ===== leftover SIMD =====
       for (; t + VEC <= T; t += VEC) {
-        __m256 xv0 = _mm256_loadu_ps(x + t - 2);
-        __m256 xv1 = _mm256_loadu_ps(x + t - 1);
-        __m256 xv2 = _mm256_loadu_ps(x + t);
+        __m256 xv0 = _mm256_loadu_ps(x0 + t - 2);
+        __m256 xv1 = _mm256_loadu_ps(x0 + t - 1);
+        __m256 xv2 = _mm256_loadu_ps(x0 + t);
 
-        __m256 acc = _mm256_mul_ps(xv0, w0);
-        acc = _mm256_fmadd_ps(xv1, w1, acc);
-        acc = _mm256_fmadd_ps(xv2, w2, acc);
-        
-        _mm256_storeu_ps(y + t, acc);
+        __m256 acc = _mm256_mul_ps(xv0, w00);
+        acc = _mm256_fmadd_ps(xv1, w01, acc);
+        acc = _mm256_fmadd_ps(xv2, w02, acc);
+        _mm256_storeu_ps(y0 + t, acc);
+
+        __m256 xv0_1 = _mm256_loadu_ps(x1 + t - 2);
+        __m256 xv1_1 = _mm256_loadu_ps(x1 + t - 1);
+        __m256 xv2_1 = _mm256_loadu_ps(x1 + t);
+
+        __m256 acc1 = _mm256_mul_ps(xv0_1, w10);
+        acc1 = _mm256_fmadd_ps(xv1_1, w11, acc1);
+        acc1 = _mm256_fmadd_ps(xv2_1, w12, acc1);
+        _mm256_storeu_ps(y1 + t, acc1);
       }
 
-
-      for (; t < T; t += 1) {
-        y[t] = x[t-2] * w[0] + x[t-1] * w[1] + x[t] * w[2];
+      // ===== scalar tail =====
+      for (; t < T; ++t) {
+        y0[t] = x0[t-2]*w0p[0] + x0[t-1]*w0p[1] + x0[t]*w0p[2];
+        y1[t] = x1[t-2]*w1p[0] + x1[t-1]*w1p[1] + x1[t]*w1p[2];
       }
 
-      // t = T
-      y[T] = x[T-2] * w[0] + x[T-1] * w[1];
+      // ===== epilogue =====
+      if (T == 1) {
+        y0[1] = x0[0] * w0p[1];
+        y0[2] = x0[0] * w0p[0];
+        y1[1] = x1[0] * w1p[1];
+        y1[2] = x1[0] * w1p[0];
+      } else if (T > 1) {
+        y0[T]   = x0[T-2]*w0p[0] + x0[T-1]*w0p[1];
+        y0[T+1] = x0[T-1]*w0p[0];
+        y1[T]   = x1[T-2]*w1p[0] + x1[T-1]*w1p[1];
+        y1[T+1] = x1[T-1]*w1p[0];
+      }
+    }
 
-      // t = T - 1
-      y[T+1] = x[T-1] * w[0];
+    // ===== 남은 채널 =====
+    for (; c < C; ++c) {
+      float *x = input  + in_base  + (size_t)c * T;
+      float *y = output + out_base + (size_t)c * Tout;
+      const float *w = weight + (size_t)c * 3;
 
+      for (unsigned int t = 0; t < T + 2; ++t) {
+        float acc = 0.0f;
+        if (t >= 2 && t-2 < T) acc += x[t-2] * w[0];
+        if (t >= 1 && t-1 < T) acc += x[t-1] * w[1];
+        if (t < T)             acc += x[t]   * w[2];
+        y[t] = acc;
+      }
     }
   }
+  
 }
 
 
