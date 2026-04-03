@@ -1,0 +1,38 @@
+diff --git a/meson.build b/meson.build
+index 87bcce38..e4ea0da7 100644
+--- a/meson.build
++++ b/meson.build
+@@ -556,24 +556,16 @@ if get_option('platform') == 'windows'
+     gtest_dep = declare_dependency(include_directories: gtest_include, link_args:['gtest.lib'])
+     gtest_main_dep = declare_dependency(include_directories: gtest_include, link_args:['gtest_main.lib', 'gtest.lib'])
+ else
+-  gmock_dep = dependency('gmock', static: true, main: false, required: false)
+-  gtest_dep = dependency('gtest', static: true, main: false, required: false)
+-  gtest_main_dep = dependency('gtest', static: true, main: true, required: false)
+-
+-  if not gmock_dep.found() or not gtest_dep.found() or not gtest_main_dep.found()
+-    googletest_options = cmake.subproject_options()
+-    if host_machine.system() != 'windows'
+-      googletest_options.add_cmake_defines({'CMAKE_POSITION_INDEPENDENT_CODE': true})
+-    endif
+-    googletest_options.add_cmake_defines({'BUILD_SHARED_LIBS': false})
+-    googletest_subproject = cmake.subproject('googletest', options: googletest_options, required: true)
+-    gmock_dep = googletest_subproject.dependency('gmock')
+-    gtest_dep = googletest_subproject.dependency('gtest')
+-    gtest_main_dep = [googletest_subproject.dependency('gtest_main')]
+-    # meson provided dependency gtest_main_dep is sum of [gtest_dep, gtest_main_dep]
+-    # This difference between cmake and meson dependency is exposed on linux
+-    gtest_main_dep += gtest_dep
++  googletest_options = cmake.subproject_options()
++  if host_machine.system() != 'windows'
++    googletest_options.add_cmake_defines({'CMAKE_POSITION_INDEPENDENT_CODE': true})
+   endif
++  googletest_options.add_cmake_defines({'BUILD_SHARED_LIBS': false})
++  googletest_subproject = cmake.subproject('googletest', options: googletest_options, required: true)
++  gmock_dep = googletest_subproject.dependency('gmock')
++  gtest_dep = googletest_subproject.dependency('gtest')
++  gtest_main_dep = [googletest_subproject.dependency('gtest_main')]
++  gtest_main_dep += gtest_dep
+ endif
+
+ if get_option('enable-test') # and get_option('platform') != 'android'

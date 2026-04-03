@@ -626,8 +626,8 @@ extern void nntr_gemm_qsi8d32p_qsi4c32p_packed(
 
 
 #endif
-extern void causal_depthwise_conv1d_k3_fp16(
-  float *input, const uint16_t *packed_weight,
+extern void causal_depthwise_conv1d_k3_fp32(
+  float *input, const float *packed_weight,
   float *output, unsigned int B,
   unsigned int H, unsigned int W);
 /**

@@ -99,6 +99,8 @@ typedef enum {
     55, /**< Instance Normalization Layer type */
   ML_TRAIN_LAYER_TYPE_DEPTHWISE_CONV1D =
     56, /**< Depthwise Convolution 1D Layer type */
+  ML_TRAIN_LAYER_TYPE_CAUSAL_CONV1D =
+    57, /**< Causal Convolution 1D Layer type */
   ML_TRAIN_LAYER_TYPE_PREPROCESS_FLIP =
     300, /**< Preprocess flip Layer (Since 6.5) */
   ML_TRAIN_LAYER_TYPE_PREPROCESS_TRANSLATE =

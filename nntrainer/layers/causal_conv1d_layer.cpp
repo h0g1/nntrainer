@@ -22,7 +22,6 @@
 #include <nntrainer_error.h>
 #include <nntrainer_log.h>
 
-namespace causallm {
 
 CausalConv1DLayer::CausalConv1DLayer() : LayerImpl() {
   weight_idx.fill(std::numeric_limits<unsigned int>::max());
@@ -148,7 +147,7 @@ void CausalConv1DLayer::exportTo(
   LayerImpl::exportTo(exporter, method);
 }
 
-} // namespace causallm
+
 
 #ifdef PLUGGABLE
 extern "C" {
@@ -167,5 +166,5 @@ nntrainer::LayerPluggable ml_train_layer_pluggable{
   causallm::CausalConv1DLayer::type
 };
 
-}
+
 #endif

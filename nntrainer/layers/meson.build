@@ -65,7 +65,8 @@ layer_sources = [
   'upsample2d_layer.cpp',
   'channel_shuffle.cpp',
   'group_normalization_layer.cpp',
-  'instance_normalization_layer.cpp'
+  'instance_normalization_layer.cpp',
+  'causal_conv1d_layer.cpp'
 ]
 
 layer_headers = [

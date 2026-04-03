@@ -480,8 +480,8 @@ void nntr_gemm_qai8dxp_qsi4cxp_packed(
 
 #endif
 
-void causal_depthwise_conv1d_k3_fp16(float *input,
-                                     const uint16_t *packed_weight,
+void causal_depthwise_conv1d_k3_fp32(float *input,
+                                     const float *packed_weight,
                                      float *output,
                                      unsigned int B,
                                      unsigned int H,

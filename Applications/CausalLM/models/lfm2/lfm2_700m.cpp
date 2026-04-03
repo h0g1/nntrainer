@@ -17,6 +17,7 @@
 #include <tie_word_embedding.h>
 #include <custom_multiply.h>
 #include <custom_slice.h>
+#include <causal_conv1d_layer.h>
 
 using ml::train::createLayer;
 using ml::train::Tensor;
@@ -265,7 +266,7 @@ Lfm2CausalLM::createConvBlock(const int layer_id,
   }));
   Tensor conv_op_3_out = conv_op_3({chunk_0, chunk_2});
 
-  LayerHandle conv_op_4(createLayer("depthwiseconv1d", {
+  LayerHandle conv_op_4(createLayer("causalconv1d", {
     withKey("name", prefix + "_conv_conv"),
     withKey("filters", 1536),
     withKey("kernel_size", 3),

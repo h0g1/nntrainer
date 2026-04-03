@@ -1226,28 +1226,19 @@ void ele_add(const unsigned int N, const float *X, const float *Y, float *Z,
     }
   }
 }
-void causal_depthwise_conv1d_k3_fp16(float *input,
-                                     const uint16_t *packed_weight,
-                                     float *output,
-                                     unsigned int B,
-                                     unsigned int H,
-                                     unsigned int W) {
-  const uint16_t *w0 = packed_weight;
-  const uint16_t *w1 = packed_weight + W;
-  const uint16_t *w2 = packed_weight + 2 * W;
+
+void causal_depthwise_conv1d_k3_fp32(float *input,
+                                      const float *packed_weight,
+                                      float *output,
+                                      unsigned int B,
+                                      unsigned int H,
+                                      unsigned int W) {
+  const float *w0 = packed_weight;
+  const float *w1 = packed_weight + W;
+  const float *w2 = packed_weight + 2 * W;
 
   constexpr unsigned int VEC = 8;
   constexpr unsigned int TILE = 32;
-
-  auto load_fp16x8_to_fp32 = [](const uint16_t *src) -> __m256 {
-    const __m128i h =
-      _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
-    return _mm256_cvtph_ps(h);
-  };
-
-  auto fp16_to_fp32_scalar = [](uint16_t h) -> float {
-    return _cvtsh_ss(h);
-  };
 
   for (unsigned int b = 0; b < B; ++b) {
     const float *x_base = input + static_cast<size_t>(b) * H * W;
@@ -1256,20 +1247,20 @@ void causal_depthwise_conv1d_k3_fp16(float *input,
     unsigned int c = 0;
 
     for (; c + TILE <= W; c += TILE) {
-      const __m256 vw0_0 = load_fp16x8_to_fp32(w0 + c + 0);
-      const __m256 vw0_1 = load_fp16x8_to_fp32(w0 + c + 8);
-      const __m256 vw0_2 = load_fp16x8_to_fp32(w0 + c + 16);
-      const __m256 vw0_3 = load_fp16x8_to_fp32(w0 + c + 24);
+      const __m256 vw0_0 = _mm256_loadu_ps(w0 + c + 0);
+      const __m256 vw0_1 = _mm256_loadu_ps(w0 + c + 8);
+      const __m256 vw0_2 = _mm256_loadu_ps(w0 + c + 16);
+      const __m256 vw0_3 = _mm256_loadu_ps(w0 + c + 24);
 
-      const __m256 vw1_0 = load_fp16x8_to_fp32(w1 + c + 0);
-      const __m256 vw1_1 = load_fp16x8_to_fp32(w1 + c + 8);
-      const __m256 vw1_2 = load_fp16x8_to_fp32(w1 + c + 16);
-      const __m256 vw1_3 = load_fp16x8_to_fp32(w1 + c + 24);
+      const __m256 vw1_0 = _mm256_loadu_ps(w1 + c + 0);
+      const __m256 vw1_1 = _mm256_loadu_ps(w1 + c + 8);
+      const __m256 vw1_2 = _mm256_loadu_ps(w1 + c + 16);
+      const __m256 vw1_3 = _mm256_loadu_ps(w1 + c + 24);
 
-      const __m256 vw2_0 = load_fp16x8_to_fp32(w2 + c + 0);
-      const __m256 vw2_1 = load_fp16x8_to_fp32(w2 + c + 8);
-      const __m256 vw2_2 = load_fp16x8_to_fp32(w2 + c + 16);
-      const __m256 vw2_3 = load_fp16x8_to_fp32(w2 + c + 24);
+      const __m256 vw2_0 = _mm256_loadu_ps(w2 + c + 0);
+      const __m256 vw2_1 = _mm256_loadu_ps(w2 + c + 8);
+      const __m256 vw2_2 = _mm256_loadu_ps(w2 + c + 16);
+      const __m256 vw2_3 = _mm256_loadu_ps(w2 + c + 24);
 
       __m256 prev1_0 = _mm256_setzero_ps();
       __m256 prev1_1 = _mm256_setzero_ps();
@@ -1322,9 +1313,9 @@ void causal_depthwise_conv1d_k3_fp16(float *input,
     }
 
     for (; c + VEC <= W; c += VEC) {
-      const __m256 vw0v = load_fp16x8_to_fp32(w0 + c);
-      const __m256 vw1v = load_fp16x8_to_fp32(w1 + c);
-      const __m256 vw2v = load_fp16x8_to_fp32(w2 + c);
+      const __m256 vw0v = _mm256_loadu_ps(w0 + c);
+      const __m256 vw1v = _mm256_loadu_ps(w1 + c);
+      const __m256 vw2v = _mm256_loadu_ps(w2 + c);
 
       __m256 prev1 = _mm256_setzero_ps();
       __m256 prev2 = _mm256_setzero_ps();
@@ -1347,9 +1338,9 @@ void causal_depthwise_conv1d_k3_fp16(float *input,
     }
 
     for (; c < W; ++c) {
-      const float sw0 = fp16_to_fp32_scalar(w0[c]);
-      const float sw1 = fp16_to_fp32_scalar(w1[c]);
-      const float sw2 = fp16_to_fp32_scalar(w2[c]);
+      const float sw0 = w0[c];
+      const float sw1 = w1[c];
+      const float sw2 = w2[c];
 
       float prev1 = 0.0f;
       float prev2 = 0.0f;

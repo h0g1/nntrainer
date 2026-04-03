@@ -32,6 +32,8 @@
 #include <lion.h>
 #include <sgd.h>
 
+#include <causal_conv1d_layer.h>
+
 #include <activation_layer.h>
 #include <add_layer.h>
 #include <addition_layer.h>
@@ -309,6 +311,8 @@ void AppContext::add_default_object() {
                   LayerType::LAYER_TANGENT);
   registerFactory(nntrainer::createLayer<MatMulLayer>, MatMulLayer::type,
                   LayerType::LAYER_MATMUL);
+  registerFactory(nntrainer::createLayer<CausalConv1DLayer>, CausalConv1DLayer::type,
+                  LayerType::LAYER_CAUSAL_CONV1D);                
   registerFactory(nntrainer::createLayer<CastLayer>, CastLayer::type,
                   LayerType::LAYER_CAST);
   registerFactory(nntrainer::createLayer<GatherLayer>, GatherLayer::type,

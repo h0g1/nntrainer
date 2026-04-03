@@ -461,13 +461,13 @@ void compute_kcaches(const float *in, const uint16_t *kcache, float *output,
     local_window_size, head_start, head_end);
 }
 
-void causal_depthwise_conv1d_k3_fp16(float *input,
-                                     const uint16_t *packed_weight,
+void causal_depthwise_conv1d_k3_fp32(float *input,
+                                     const float *packed_weight,
                                      float *output,
                                      unsigned int B,
                                      unsigned int H,
                                      unsigned int W){
-  nntrainer::avx2::causal_depthwise_conv1d_k3_fp16(
+  nntrainer::avx2::causal_depthwise_conv1d_k3_fp32(
     input, packed_weight, output, B, H, W);
 }
 

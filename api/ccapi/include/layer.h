@@ -131,6 +131,8 @@ enum LayerType {
     ML_TRAIN_LAYER_TYPE_INSTANCE_NORMALIZATION, /**< Instance Normalization */
   LAYER_DEPTHWISE_CONV1D =
     ML_TRAIN_LAYER_TYPE_DEPTHWISE_CONV1D, /**< Depthwise Conv 1D Layer type */
+  LAYER_CAUSAL_CONV1D =
+    ML_TRAIN_LAYER_TYPE_CAUSAL_CONV1D,
 
   LAYER_UNKNOWN = ML_TRAIN_LAYER_TYPE_UNKNOWN, /**< Unknown */
 
@@ -578,6 +580,8 @@ inline std::unique_ptr<Layer>
 MultiOut(const std::vector<std::string> &properties = {}) {
   return createLayer(LayerType::LAYER_MULTIOUT, properties);
 }
+
+
 
 /**
  * @brief Helper function to create nnstreamer backbone layer
