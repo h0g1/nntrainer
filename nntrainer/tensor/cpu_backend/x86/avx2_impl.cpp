@@ -1248,30 +1248,30 @@ void causal_depthwise_conv1d_k3_fp32(
       const __m256 w2 = _mm256_set1_ps(w[2]);
 
       // t = 0
-      y[0] = x[0] * w[0];
+      y[0] = x[0] * w[2];
 
       // t = 1
       if (T > 1)
-        y[1] = x[1] * w[0] + x[0] * w[1];
+        y[1] = x[0] * w[1] + x[1] * w[2];
 
       unsigned int t = 2;
 
       // SIMD main loop
       for (; t + VEC <= T; t += VEC) {
-        __m256 xv0 = _mm256_loadu_ps(x + t);
+        __m256 xv0 = _mm256_loadu_ps(x + t - 2);
         __m256 xv1 = _mm256_loadu_ps(x + t - 1);
-        __m256 xv2 = _mm256_loadu_ps(x + t - 2);
+        __m256 xv2 = _mm256_loadu_ps(x + t);
 
         __m256 acc = _mm256_mul_ps(xv0, w0);
         acc = _mm256_fmadd_ps(xv1, w1, acc);
         acc = _mm256_fmadd_ps(xv2, w2, acc);
-
+        
         _mm256_storeu_ps(y + t, acc);
       }
 
       // tail
       for (; t < T; ++t) {
-        y[t] = x[t] * w[0] + x[t - 1] * w[1] + x[t - 2] * w[2];
+        y[t] = x[t - 2] * w[0] + x[t - 1] * w[1] + x[t] * w[2];
       }
     }
   }

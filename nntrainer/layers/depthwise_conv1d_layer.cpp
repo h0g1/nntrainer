@@ -244,6 +244,13 @@ void DepthwiseConv1DLayer::forwarding(RunLayerContext &context, bool training) {
   unsigned int out_width = out_dim.width();
   unsigned int pad_left = padding[0];
 
+  float *input_data = input_.getData<float>();
+  float *output_data = hidden_.getData<float>();
+  const float *weight_data = filter.getData<float>();
+
+  causal_depthwise_conv1d_k3_fp32(input_data, weight_data, output_data, batch,
+                                  channels, in_width);
+  /*
   // Expand weight [C,1,1,K] → weight_col [1,1,C*K,OW] by tiling across OW.
   // Done only once; the tiled weight_col is reused across all forward calls.
   // For quantized inference the stored weight_col can be INT4 quantized.
@@ -261,6 +268,7 @@ void DepthwiseConv1DLayer::forwarding(RunLayerContext &context, bool training) {
    *      weight_col stores the pre-expanded weight so that for quantized
    *      inference it can be INT4-quantized once and reused directly.
    */
+  /*
   for (unsigned int b = 0; b < batch; ++b) {
     col_buf.setZero();
     Tensor in_sub = input_.getBatchSlice(b, 1);
@@ -280,7 +288,7 @@ void DepthwiseConv1DLayer::forwarding(RunLayerContext &context, bool training) {
       w_row.dot(col_block, out_row, false, false);
     }
   }
-
+  */
   if (auto &disable_bias = std::get<props::DisableBias>(*layer_impl_props);
       disable_bias.empty() || disable_bias.get() == false) {
     Tensor &bias = context.getWeight(wt_idx[DepthwiseConvParams::bias]);
