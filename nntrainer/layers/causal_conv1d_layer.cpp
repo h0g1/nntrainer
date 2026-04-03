@@ -21,7 +21,9 @@
 #include <fp16.h>
 #include <nntrainer_error.h>
 #include <nntrainer_log.h>
+#include <node_exporter.h>
 
+namespace nntrainer {
 
 CausalConv1DLayer::CausalConv1DLayer() : LayerImpl() {
   weight_idx.fill(std::numeric_limits<unsigned int>::max());
@@ -166,5 +168,6 @@ nntrainer::LayerPluggable ml_train_layer_pluggable{
   causallm::CausalConv1DLayer::type
 };
 
-
+}
 #endif
+}

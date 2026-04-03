@@ -12,8 +12,9 @@
 #include <tensor_dim.h>
 
 
+namespace nntrainer{
 
-class CausalConv1DLayer : public nntrainer::LayerImpl {
+class CausalConv1DLayer : public LayerImpl {
 public:
   CausalConv1DLayer();
   ~CausalConv1DLayer() override = default;
@@ -30,6 +31,26 @@ public:
 
   bool supportBackwarding() const override { return false; }
 
+   /**
+   *  @brief  Move constructor of Depthwise Conv 1D Layer.
+   *  @param[in] DepthwiseConv1DLayer &&
+   */
+  CausalConv1DLayer(CausalConv1DLayer &&rhs) noexcept = default;
+
+  /**
+   * @brief  Move assignment operator.
+   * @parma[in] rhs DepthwiseConv1DLayer to be moved.
+   */
+  CausalConv1DLayer &operator=(CausalConv1DLayer &&rhs) = default;
+
+
+  const std::string getType() const override {
+    return CausalConv1DLayer::type;
+  };
+
+
+
+
   inline static const std::string type = "causal_conv1d";
 
 private:
@@ -42,6 +63,6 @@ private:
   void validateInputShape(const nntrainer::TensorDim &input_dim) const;
 };
 
-
+}
 
 #endif // __CAUSAL_LM_CAUSAL_CONV1D_LAYER_H__
