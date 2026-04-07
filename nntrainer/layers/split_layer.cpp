@@ -116,7 +116,7 @@ void SplitLayer::incremental_forwarding(RunLayerContext &context,
   std::chrono::system_clock::time_point end = std::chrono::system_clock::now();
 
   std::chrono::microseconds micro = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-  std::cout << "" << micro.count() << std::endl;
+
 }
 
 void SplitLayer::forwarding(RunLayerContext &context, bool training) {
