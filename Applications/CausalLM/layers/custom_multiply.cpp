@@ -16,6 +16,8 @@
 #include <nntrainer_error.h>
 #include <nntrainer_log.h>
 #include <util_func.h>
+#include <iostream>
+#include <chrono>
 
 namespace causallm {
 
@@ -53,13 +55,65 @@ void CustomMultiplyLayer::forwarding(nntrainer::RunLayerContext &context,
   in0.multiply(in1, out);
 }
 
+
+
 void CustomMultiplyLayer::incremental_forwarding(
   nntrainer::RunLayerContext &context, unsigned int from, unsigned int to,
   bool training) {
-  // Avoid BinaryOperationLayer's generic incremental slicing, which assumes
-  // the sequence axis is height. For CausalLM conv path tensors shaped
-  // [B, C, 1, T], run full forwarding instead.
-  forwarding(context, training);
+  nntrainer::Tensor &in0 = context.getInput(INPUT_IDX_0);
+  nntrainer::Tensor &in1 = context.getInput(INPUT_IDX_1);
+  nntrainer::Tensor &out = context.getOutput(OUT_IDX);
+
+  const auto &out_dim = out.getDim();
+  const auto &d0 = in0.getDim();
+  const auto &d1 = in1.getDim();
+
+  /**
+   * Assumption:
+   * - incremental range [from, to) is applied on the last dimension (T / width)
+   * - CausalLM path tensor layout is [B, C, 1, T]
+   *
+   * This matches the reason incremental forwarding exists in nntrainer:
+   * only the requested step range should be processed. 0
+   */
+
+  const unsigned int bsz = out_dim.batch();
+  const unsigned int ch = out_dim.channel();
+  const unsigned int h = out_dim.height();
+  const unsigned int w = out_dim.width();
+
+  NNTR_THROW_IF(from > to || to > w, std::invalid_argument)
+    << "CustomMultiplyLayer::incremental_forwarding invalid range: from="
+    << from << " to=" << to << " width=" << w;
+
+  if (from == to) {
+    return;
+  }
+
+  for (unsigned int b = 0; b < bsz; ++b) {
+    const unsigned int b0 = (d0.batch() == 1) ? 0 : b;
+    const unsigned int b1 = (d1.batch() == 1) ? 0 : b;
+
+    for (unsigned int c = 0; c < ch; ++c) {
+      const unsigned int c0 = (d0.channel() == 1) ? 0 : c;
+      const unsigned int c1 = (d1.channel() == 1) ? 0 : c;
+
+      for (unsigned int hh = 0; hh < h; ++hh) {
+        const unsigned int h0 = (d0.height() == 1) ? 0 : hh;
+        const unsigned int h1 = (d1.height() == 1) ? 0 : hh;
+
+        for (unsigned int ww = from; ww < to; ++ww) {
+          const unsigned int w0 = (d0.width() == 1) ? 0 : ww;
+          const unsigned int w1 = (d1.width() == 1) ? 0 : ww;
+
+          float v0 = in0.getValue<float>(b0, c0, h0, w0);
+          float v1 = in1.getValue<float>(b1, c1, h1, w1);
+
+          out.setValue(b, c, hh, ww, v0 * v1);
+        }
+      }
+    }
+  }
 }
 
 void CustomMultiplyLayer::calcDerivative(

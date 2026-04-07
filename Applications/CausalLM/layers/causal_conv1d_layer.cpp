@@ -17,10 +17,13 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <iostream>
 
 #include <cpu_backend.h>
 #include <nntrainer_error.h>
 #include <nntrainer_log.h>
+
+#include <chrono>
 
 namespace causallm {
 
@@ -144,6 +147,8 @@ void CausalConv1DLayer::incremental_forwarding(
       std::memcpy(s + W, x + (to - 1) * W, W * sizeof(float));  // x_{to-1}
     }
   }
+
+ 
 }
 
 void CausalConv1DLayer::calcDerivative(nntrainer::RunLayerContext &context) {

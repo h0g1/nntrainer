@@ -19,6 +19,9 @@
 #include <split_layer.h>
 #include <util_func.h>
 
+#include <iostream>
+#include <chrono>
+
 namespace nntrainer {
 
 static constexpr size_t SINGLE_INOUT_IDX = 0;
@@ -103,8 +106,21 @@ void SplitLayer::finalize(InitLayerContext &context) {
 
   setBatch(in_dim.batch());
 }
+void SplitLayer::incremental_forwarding(RunLayerContext &context,
+                                        unsigned int from,
+                                        unsigned int to,
+                                        bool training) {
+  std::chrono::system_clock::time_point start = std::chrono::system_clock::now();
+  forwarding(context, training);
+
+  std::chrono::system_clock::time_point end = std::chrono::system_clock::now();
+
+  std::chrono::microseconds micro = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+  std::cout << "" << micro.count() << std::endl;
+}
 
 void SplitLayer::forwarding(RunLayerContext &context, bool training) {
+  std::chrono::system_clock::time_point start = std::chrono::system_clock::now();
   unsigned int split_number = std::get<props::SplitNumber>(split_props);
 
   Tensor &input_ = context.getInput(SINGLE_INOUT_IDX);
@@ -159,6 +175,10 @@ void SplitLayer::forwarding(RunLayerContext &context, bool training) {
   }
 
   input_.reshape(in_dim);
+  std::chrono::system_clock::time_point end = std::chrono::system_clock::now();
+
+  std::chrono::microseconds micro = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+  //std::cout << "split" << micro.count() << std::endl;
 }
 
 void SplitLayer::calcDerivative(RunLayerContext &context) {
