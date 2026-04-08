@@ -180,8 +180,7 @@ public:
   save(const std::string &file_path,
        ModelFormat format = ModelFormat::MODEL_FORMAT_BIN,
        TensorDim::DataType dtype = TensorDim::DataType::NONE,
-       const std::map<std::string, TensorDim::DataType> &layer_dtype_map = {},
-       ISA target_isa = ISA::AUTO) = 0;
+       const std::map<std::string, TensorDim::DataType> &layer_dtype_map = {}) = 0;
 
   /**
    * @brief  load model with regard to the format

@@ -25,7 +25,7 @@ if [ ! -f "$NNTRAINER_ROOT/builddir/android_build_result/lib/arm64-v8a/libnntrai
     if [ -d "$NNTRAINER_ROOT/builddir" ]; then
         rm -rf builddir
     fi
-    ./tools/package_android.sh
+    ./tools/package_android.sh -Dmmap-read=false -Domp-num-threads=4 -Dthread-backend=omp
 else
     echo "nntrainer for Android already built."
 fi
@@ -79,5 +79,5 @@ ndk-build NDK_PROJECT_PATH=./ APP_BUILD_SCRIPT=./Android.mk NDK_APPLICATION_MK=.
 echo "Build completed successfully!"
 echo "Output files are in: $SCRIPT_DIR/jni/libs/arm64-v8a/"
 echo ""
-echo "Executables: nntrainer_causallm, nntr_quantize"
+echo "Executable: nntrainer_causallm"
 echo "Libraries: libnntrainer.so, libccapi-nntrainer.so, libc++_shared.so"

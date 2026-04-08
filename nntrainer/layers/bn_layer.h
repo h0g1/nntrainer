@@ -135,8 +135,7 @@ public:
    */
   void save(std::ofstream &file, RunLayerContext &run_context, bool opt_var,
             ml::train::ExecutionMode mode, bool trainable,
-            TensorDim::DataType definedWeightDataType,
-            ml::train::ISA target_isa = ml::train::ISA::AUTO) const override;
+            TensorDim::DataType definedWeightDataType) const override;
 
   /**
    * @copydoc Layer::read(std::ifstream &file, RunLayerContext &context, bool

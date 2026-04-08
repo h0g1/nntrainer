@@ -17,6 +17,7 @@
 #include <iterator>
 #include <stdexcept>
 #include <utility>
+#include <iostream>
 
 #include <activation_layer.h>
 #include <base_properties.h>
@@ -501,6 +502,7 @@ void LayerNode::read(std::ifstream &file, bool opt_var,
                      size_t start_offset, bool read_from_offset, int file_fd) {
   NNTR_THROW_IF(!run_context, std::runtime_error)
     << __func__ << " layer needs to be finalized first!";
+  std::cout << getName() << std::endl;
   getLayer()->read(file, *run_context, opt_var, mode,
                    (getTrainable() && mode == ml::train::ExecutionMode::TRAIN),
                    getWeightDataType(), fsu, start_offset, read_from_offset,
@@ -525,7 +527,7 @@ void LayerNode::save(std::ofstream &file, bool opt_var,
     << __func__ << " layer needs to be finalized first!";
   getLayer()->save(file, *run_context, opt_var, mode,
                    (getTrainable() && mode == ml::train::ExecutionMode::TRAIN),
-                   target_dtype, target_isa);
+                   target_dtype);
 }
 
 void LayerNode::clearOptVar() {

@@ -33,6 +33,7 @@
 #endif
 #include <fallback_internal.h>
 #include <nntrainer_error.h>
+#include <thread_manager.h>
 #include <util_func.h>
 #include <vector>
 
@@ -441,68 +442,65 @@ void unpack_q4_0x8_transpose16(const void *src, unsigned short *__restrict dT,
   // --------
   const int groups_pairs = groups_N8 / 2;
 
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4849)
-#endif
-#pragma omp parallel for collapse(2) schedule(static)
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
-  for (int c0 = 0; c0 < cols_scales; c0 += CT) {
-    for (int bp = 0; bp < groups_pairs; ++bp) {
-      const int b0 = 2 * bp;
-      const int b1 = b0 + 1;
-      const int r0 = b0 * 8; // 16 rows: r0..r0+15
-      const int c1 = std::min(c0 + CT, cols_scales);
+  {
+    const int cols_chunks = (cols_scales + CT - 1) / CT;
+    auto &tm = nntrainer::ThreadManager::Global();
+    tm.parallel_for(
+      0, static_cast<size_t>(cols_chunks * groups_pairs), [&](size_t idx) {
+        int c0 = (static_cast<int>(idx) / groups_pairs) * CT;
+        int bp = static_cast<int>(idx) % groups_pairs;
+        const int b0 = 2 * bp;
+        const int b1 = b0 + 1;
+        const int r0 = b0 * 8; // 16 rows: r0..r0+15
+        const int c1 = std::min(c0 + CT, cols_scales);
 
-      for (int c = c0; c < c1; ++c) {
-        const block_q4_0x8 &A = x[b0 * cols_scales + c];
-        const block_q4_0x8 &B = x[b1 * cols_scales + c];
+        for (int c = c0; c < c1; ++c) {
+          const block_q4_0x8 &A = x[b0 * cols_scales + c];
+          const block_q4_0x8 &B = x[b1 * cols_scales + c];
 
-        unsigned short *__restrict dT_c = dT + c * N;
-        unsigned short *__restrict qsT_c0 = qsT + (c * 8) * N;
+          unsigned short *__restrict dT_c = dT + c * N;
+          unsigned short *__restrict qsT_c0 = qsT + (c * 8) * N;
 
-        // scales: pack two 8×u16 vectors → one 256b store to dT[c, r0..r0+15]
-        __m128i sd0 = _mm_loadu_si128((const __m128i *)A.d);
-        __m128i sd1 = _mm_loadu_si128((const __m128i *)B.d);
-        __m256i sdp = _mm256_set_m128i(sd1, sd0);
-        store256_u16(dT_c + r0, sdp);
+          // scales: pack two 8×u16 vectors → one 256b store to dT[c, r0..r0+15]
+          __m128i sd0 = _mm_loadu_si128((const __m128i *)A.d);
+          __m128i sd1 = _mm_loadu_si128((const __m128i *)B.d);
+          __m256i sdp = _mm256_set_m128i(sd1, sd0);
+          store256_u16(dT_c + r0, sdp);
 
-        // pre-split stripes
-        const unsigned char *__restrict A0 = A.qs;      // + 8*off
-        const unsigned char *__restrict A1 = A.qs + 64; // + 8*off
-        const unsigned char *__restrict B0 = B.qs;
-        const unsigned char *__restrict B1 = B.qs + 64;
+          // pre-split stripes
+          const unsigned char *__restrict A0 = A.qs;      // + 8*off
+          const unsigned char *__restrict A1 = A.qs + 64; // + 8*off
+          const unsigned char *__restrict B0 = B.qs;
+          const unsigned char *__restrict B1 = B.qs + 64;
 
-        // build 8 rows for A and 8 rows for B
-        __m128i Ra[8], Rb[8];
-        for (int off = 0; off < 8; ++off) {
-          Ra[off] = pack_row8(A0, A1, off);
-          Rb[off] = pack_row8(B0, B1, off);
+          // build 8 rows for A and 8 rows for B
+          __m128i Ra[8], Rb[8];
+          for (int off = 0; off < 8; ++off) {
+            Ra[off] = pack_row8(A0, A1, off);
+            Rb[off] = pack_row8(B0, B1, off);
+          }
+
+          // 8×8 transpose → columns (each 8×u16) for A and B
+          __m128i Ca0, Ca1, Ca2, Ca3, Ca4, Ca5, Ca6, Ca7;
+          __m128i Cb0, Cb1, Cb2, Cb3, Cb4, Cb5, Cb6, Cb7;
+          transpose8x8_epi16(Ra[0], Ra[1], Ra[2], Ra[3], Ra[4], Ra[5], Ra[6],
+                             Ra[7], Ca0, Ca1, Ca2, Ca3, Ca4, Ca5, Ca6, Ca7);
+          transpose8x8_epi16(Rb[0], Rb[1], Rb[2], Rb[3], Rb[4], Rb[5], Rb[6],
+                             Rb[7], Cb0, Cb1, Cb2, Cb3, Cb4, Cb5, Cb6, Cb7);
+
+          // pair and store 32B per column t: rows r0..r0+15 are contiguous
+          unsigned short *__restrict base = qsT_c0 + r0;
+          const int S = N;
+          store256_u16(base + 0 * S, _mm256_set_m128i(Cb0, Ca0));
+          store256_u16(base + 1 * S, _mm256_set_m128i(Cb1, Ca1));
+          store256_u16(base + 2 * S, _mm256_set_m128i(Cb2, Ca2));
+          store256_u16(base + 3 * S, _mm256_set_m128i(Cb3, Ca3));
+          store256_u16(base + 4 * S, _mm256_set_m128i(Cb4, Ca4));
+          store256_u16(base + 5 * S, _mm256_set_m128i(Cb5, Ca5));
+          store256_u16(base + 6 * S, _mm256_set_m128i(Cb6, Ca6));
+          store256_u16(base + 7 * S, _mm256_set_m128i(Cb7, Ca7));
         }
-
-        // 8×8 transpose → columns (each 8×u16) for A and B
-        __m128i Ca0, Ca1, Ca2, Ca3, Ca4, Ca5, Ca6, Ca7;
-        __m128i Cb0, Cb1, Cb2, Cb3, Cb4, Cb5, Cb6, Cb7;
-        transpose8x8_epi16(Ra[0], Ra[1], Ra[2], Ra[3], Ra[4], Ra[5], Ra[6],
-                           Ra[7], Ca0, Ca1, Ca2, Ca3, Ca4, Ca5, Ca6, Ca7);
-        transpose8x8_epi16(Rb[0], Rb[1], Rb[2], Rb[3], Rb[4], Rb[5], Rb[6],
-                           Rb[7], Cb0, Cb1, Cb2, Cb3, Cb4, Cb5, Cb6, Cb7);
-
-        // pair and store 32B per column t: rows r0..r0+15 are contiguous
-        unsigned short *__restrict base = qsT_c0 + r0;
-        const int S = N;
-        store256_u16(base + 0 * S, _mm256_set_m128i(Cb0, Ca0));
-        store256_u16(base + 1 * S, _mm256_set_m128i(Cb1, Ca1));
-        store256_u16(base + 2 * S, _mm256_set_m128i(Cb2, Ca2));
-        store256_u16(base + 3 * S, _mm256_set_m128i(Cb3, Ca3));
-        store256_u16(base + 4 * S, _mm256_set_m128i(Cb4, Ca4));
-        store256_u16(base + 5 * S, _mm256_set_m128i(Cb5, Ca5));
-        store256_u16(base + 6 * S, _mm256_set_m128i(Cb6, Ca6));
-        store256_u16(base + 7 * S, _mm256_set_m128i(Cb7, Ca7));
-      }
-    }
+      });
   }
 
   // -------- tail: if odd number of 8-row groups, process the last one (8 rows)
@@ -511,8 +509,10 @@ void unpack_q4_0x8_transpose16(const void *src, unsigned short *__restrict dT,
     const int b = groups_N8 - 1;
     const int r0 = b * 8;
 
-#pragma omp parallel for schedule(static)
-    for (int c0 = 0; c0 < cols_scales; c0 += CT) {
+    const int cols_chunks = (cols_scales + CT - 1) / CT;
+    auto &tm = nntrainer::ThreadManager::Global();
+    tm.parallel_for(0, static_cast<size_t>(cols_chunks), [&](size_t chunk_idx) {
+      int c0 = static_cast<int>(chunk_idx) * CT;
       const int c1 = std::min(c0 + CT, cols_scales);
       for (int c = c0; c < c1; ++c) {
         const block_q4_0x8 &A = x[b * cols_scales + c];
@@ -545,7 +545,7 @@ void unpack_q4_0x8_transpose16(const void *src, unsigned short *__restrict dT,
         _mm_storeu_si128((__m128i *)(base + 6 * S), C6);
         _mm_storeu_si128((__m128i *)(base + 7 * S), C7);
       }
-    }
+    });
   }
 
 #if defined(USE_NONTEMPORAL_STORES)
@@ -605,16 +605,11 @@ static inline void convert_q4_0x8_noshuffle(const void *src,
   const block_q4_0x8 *x = (const block_q4_0x8 *)src;
   const __m256i bias256 = _mm256_set1_epi8((char)0x88);
 
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4849)
-#endif
-#pragma omp parallel for collapse(2) schedule(static)
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
-  for (int b = 0; b < GROUPS; ++b) {
-    for (int offset = 0; offset < 8; ++offset) {
+  {
+    auto &tm = nntrainer::ThreadManager::Global();
+    tm.parallel_for(0, static_cast<size_t>(GROUPS * 8), [&](size_t idx) {
+      int b = static_cast<int>(idx) / 8;
+      int offset = static_cast<int>(idx) % 8;
 
       // ---- D slice ----
       {
@@ -696,7 +691,7 @@ static inline void convert_q4_0x8_noshuffle(const void *src,
         // second half (same d0/d1 pattern)
         do_half((base_q + UNIT) >> 4);
       }
-    }
+    });
   }
 
 #if Q4X8_USE_STREAMING_STORES
@@ -998,6 +993,153 @@ void swiglu(const unsigned int N, float *X, const float *Y, const float *Z,
   _mm_setcsr(oldcsr);
 }
 
+#define gelu_start_tanh -4.38086284326899f
+#define gelu_end_tanh 4.38086284326899f
+
+#define tanh_c_gelu_p0 5.91303808e-6f
+#define tanh_c_gelu_p1 5.00000000e-1f
+#define tanh_c_gelu_p2 3.98865869e-1f
+#define tanh_c_gelu_p4 -6.66574676e-2f
+#define tanh_c_gelu_p6 1.00712610e-2f
+#define tanh_c_gelu_p8 -1.19336340e-3f
+#define tanh_c_gelu_p10 1.09543224e-4f
+#define tanh_c_gelu_p12 -7.55788500e-6f
+#define tanh_c_gelu_p14 3.73374142e-7f
+#define tanh_c_gelu_p16 -1.23162678e-8f
+#define tanh_c_gelu_p18 2.40940960e-10f
+#define tanh_c_gelu_p20 -2.10237709e-12f
+
+#define gelu_start_erf -4.59373833108583f
+#define gelu_end_erf 4.59373833108583f
+
+#define erf_c_gelu_p0 8.70757509e-06f
+#define erf_c_gelu_p1 5.00000000e-1f
+#define erf_c_gelu_p2 3.98833088e-01f
+#define erf_c_gelu_p4 -6.62633808e-02f
+#define erf_c_gelu_p6 9.78776282e-03f
+#define erf_c_gelu_p8 -1.10798998e-03f
+#define erf_c_gelu_p10 9.51056006e-05f
+#define erf_c_gelu_p12 -6.04633051e-06f
+#define erf_c_gelu_p14 2.73076070e-07f
+#define erf_c_gelu_p16 -8.20707325e-09f
+#define erf_c_gelu_p18 1.46115955e-10f
+#define erf_c_gelu_p20 -1.16009840e-12f
+
+static inline __m256 poly_gelu_tanh_avx2(__m256 x) {
+  const __m256 x2 = _mm256_mul_ps(x, x);
+
+  __m256 y = _mm256_mul_ps(x2, _mm256_set1_ps(tanh_c_gelu_p20));
+  y = _mm256_add_ps(y, _mm256_set1_ps(tanh_c_gelu_p18));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(tanh_c_gelu_p16));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(tanh_c_gelu_p14));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(tanh_c_gelu_p12));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(tanh_c_gelu_p10));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(tanh_c_gelu_p8));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(tanh_c_gelu_p6));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(tanh_c_gelu_p4));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(tanh_c_gelu_p2));
+  y = _mm256_mul_ps(x2, y);
+
+  __m256 z = _mm256_mul_ps(x, _mm256_set1_ps(tanh_c_gelu_p1));
+  z = _mm256_add_ps(z, _mm256_set1_ps(tanh_c_gelu_p0));
+
+  y = _mm256_add_ps(y, z);
+
+  const __m256 gt_start =
+    _mm256_cmp_ps(x, _mm256_set1_ps(gelu_start_tanh), _CMP_GT_OQ);
+  const __m256 le_end =
+    _mm256_cmp_ps(x, _mm256_set1_ps(gelu_end_tanh), _CMP_LE_OQ);
+  const __m256 gt_end =
+    _mm256_cmp_ps(x, _mm256_set1_ps(gelu_end_tanh), _CMP_GT_OQ);
+
+  y = _mm256_and_ps(y, gt_start);
+  y = _mm256_and_ps(y, le_end);
+  __m256 x_hi = _mm256_and_ps(x, gt_end);
+
+  return _mm256_add_ps(y, x_hi);
+}
+
+static inline __m256 poly_gelu_erf_avx2(__m256 x) {
+  const __m256 x2 = _mm256_mul_ps(x, x);
+
+  __m256 y = _mm256_mul_ps(x2, _mm256_set1_ps(erf_c_gelu_p20));
+  y = _mm256_add_ps(y, _mm256_set1_ps(erf_c_gelu_p18));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(erf_c_gelu_p16));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(erf_c_gelu_p14));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(erf_c_gelu_p12));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(erf_c_gelu_p10));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(erf_c_gelu_p8));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(erf_c_gelu_p6));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(erf_c_gelu_p4));
+  y = _mm256_mul_ps(x2, y);
+  y = _mm256_add_ps(y, _mm256_set1_ps(erf_c_gelu_p2));
+  y = _mm256_mul_ps(x2, y);
+
+  __m256 z = _mm256_mul_ps(x, _mm256_set1_ps(erf_c_gelu_p1));
+  z = _mm256_add_ps(z, _mm256_set1_ps(erf_c_gelu_p0));
+
+  y = _mm256_add_ps(y, z);
+
+  const __m256 gt_start =
+    _mm256_cmp_ps(x, _mm256_set1_ps(gelu_start_erf), _CMP_GT_OQ);
+  const __m256 le_end =
+    _mm256_cmp_ps(x, _mm256_set1_ps(gelu_end_erf), _CMP_LE_OQ);
+  const __m256 gt_end =
+    _mm256_cmp_ps(x, _mm256_set1_ps(gelu_end_erf), _CMP_GT_OQ);
+
+  y = _mm256_and_ps(y, gt_start);
+  y = _mm256_and_ps(y, le_end);
+  __m256 x_hi = _mm256_and_ps(x, gt_end);
+
+  return _mm256_add_ps(y, x_hi);
+}
+
+void tanh_gelu_v2(const unsigned int N, const float *X, float *Y) {
+  unsigned int i = 0;
+
+  for (; i + 8 <= N; i += 8) {
+    __m256 x = _mm256_loadu_ps(&X[i]);
+    __m256 y = poly_gelu_tanh_avx2(x);
+    _mm256_storeu_ps(&Y[i], y);
+  }
+
+  for (; i < N; ++i) {
+    const float x = X[i];
+    Y[i] = 0.5f * x *
+           (1.0f + std::tanh(0.7978845608f * (x + 0.044715f * x * x * x)));
+  }
+}
+
+void gelu_v2(const unsigned int N, const float *X, float *Y) {
+  unsigned int i = 0;
+
+  for (; i + 8 <= N; i += 8) {
+    __m256 x = _mm256_loadu_ps(&X[i]);
+    __m256 y = poly_gelu_erf_avx2(x);
+    _mm256_storeu_ps(&Y[i], y);
+  }
+
+  for (; i < N; ++i) {
+    const float x = X[i];
+    Y[i] = 0.5f * x * (1.0f + std::erf(x / std::sqrt(2.0f)));
+  }
+}
+
 void ele_mul(const unsigned int N, const float *X, const float *Y, float *Z,
              float alpha, float beta, unsigned int i_stride,
              unsigned int o_stride) {
@@ -1181,57 +1323,86 @@ static inline __m256 exp256_ps(__m256 x) {
   return _mm256_mul_ps(y, pow2n);
 }
 
+static inline __m256 rcp_ps(__m256 x) {
+  // Use Newton-Raphson method to enhance accuracy
+  // x_n+1 = x_n * (2 - x_0 * x_n)
+  __m256 rcp = _mm256_rcp_ps(x);
+  __m256 two = _mm256_set1_ps(2.0f);
+  // rcp * (2 - x * rcp)
+  return _mm256_mul_ps(rcp, _mm256_fnmadd_ps(x, rcp, two));
+}
+
 static void softmax_row_inplace(float *qk_out, size_t start_row, size_t end_row,
                                 size_t num_heads) {
-  size_t row_range = end_row - start_row;
-  const size_t full_blocks = (num_heads / 8) * 8;
-  // const size_t remainder = num_heads % 8;
+  const size_t vec_end = num_heads & ~((size_t)7); // floor(num_heads / 8) * 8
 
+  // 1. find max for each head
   float *max_vals = new float[num_heads];
+
+  // initialize max_vals with first row of qk_out
+  std::memcpy(max_vals, qk_out + start_row * num_heads,
+              num_heads * sizeof(float));
+
+  // update max_vals for each row
+  for (size_t r = start_row + 1; r < end_row; ++r) {
+    float *row = qk_out + (num_heads * r);
+    for (size_t c = 0; c < vec_end; c += 8) {
+      __m256 v = _mm256_loadu_ps(row + c);
+      __m256 m = _mm256_loadu_ps(max_vals + c);
+      m = _mm256_max_ps(v, m);
+      _mm256_storeu_ps(max_vals + c, m);
+    }
+    for (size_t c = vec_end; c < num_heads; ++c) {
+      max_vals[c] = std::max(max_vals[c], row[c]);
+    }
+  }
+
+  // 2. calc exp(x - max) and sum
   float *sum_vals = new float[num_heads];
-  // 1. max
-  for (size_t c = 0; c < num_heads; ++c) {
-    float max_val = -INFINITY;
-    for (size_t r = start_row; r < end_row; ++r)
-      max_val = std::max(max_val, qk_out[r * num_heads + c]);
-    max_vals[c] = max_val;
+  std::memset(sum_vals, 0, num_heads * sizeof(float));
+
+  for (size_t r = start_row; r < end_row; ++r) {
+    float *row = qk_out + (num_heads * r);
+    for (size_t c = 0; c < vec_end; c += 8) {
+      __m256 s = _mm256_loadu_ps(sum_vals + c);
+      __m256 v = _mm256_loadu_ps(row + c);
+      __m256 m = _mm256_loadu_ps(max_vals + c);
+      __m256 d = _mm256_sub_ps(v, m);    // x - max
+      __m256 e = exp256_ps(d);           // exp(x - max)
+      _mm256_storeu_ps(row + c, e);      // overwrite qk_out
+      s = _mm256_add_ps(s, e);           // sum += exp(x - max)
+      _mm256_storeu_ps(sum_vals + c, s); // update sum_vals
+    }
+    for (size_t c = vec_end; c < num_heads; ++c) {
+      float e = std::exp(row[c] - max_vals[c]);
+      row[c] = e;
+      sum_vals[c] += e;
+    }
   }
 
-  // 2. inplace exp + sum
-  for (size_t c = 0; c < full_blocks; c += 8) {
-    __m256 maxv = _mm256_loadu_ps(&max_vals[c]);
-    __m256 sum = _mm256_setzero_ps();
-    for (size_t r = 0; r < row_range; ++r) {
-      float *ptr = &qk_out[(start_row + r) * num_heads + c];
-      __m256 val = _mm256_loadu_ps(ptr);
-      __m256 e = exp256_ps(_mm256_sub_ps(val, maxv));
-      _mm256_storeu_ps(ptr, e); // overwrite qk_out
-      sum = _mm256_add_ps(sum, e);
-    }
-    _mm256_storeu_ps(&sum_vals[c], sum);
+  // 3. calc 1/sum
+  // _mm256_div_ps is slow
+  // precalculate (1/sum) and then multiply is much faster
+  for (size_t c = 0; c < vec_end; c += 8) {
+    __m256 s = _mm256_loadu_ps(sum_vals + c);
+    s = rcp_ps(s); // sum = 1/sum
+    _mm256_storeu_ps(sum_vals + c, s);
+  }
+  for (size_t c = vec_end; c < num_heads; ++c) {
+    sum_vals[c] = 1 / sum_vals[c];
   }
 
-  for (size_t c = full_blocks; c < num_heads; ++c) {
-    float sum = 0.0f;
-    float maxv = max_vals[c];
-    for (size_t r = 0; r < row_range; ++r) {
-      float &a = qk_out[(start_row + r) * num_heads + c];
-      a = std::exp(a - maxv); // overwrite qk_out
-      sum += a;
+  // 4. calc exp(x - max) * (1/sum)
+  for (size_t r = start_row; r < end_row; ++r) {
+    float *row = qk_out + (num_heads * r);
+    for (size_t c = 0; c < vec_end; c += 8) {
+      __m256 s = _mm256_loadu_ps(sum_vals + c); // 1/sum
+      __m256 v = _mm256_loadu_ps(row + c);      // exp(x - max)
+      __m256 o = _mm256_mul_ps(v, s);           // exp(x - max) * (1/sum)
+      _mm256_storeu_ps(row + c, o);             // overwrite qk_out
     }
-    sum_vals[c] = sum;
-  }
-  // 3. softmax = exp / sum (inplace)
-  for (size_t r = 0; r < row_range; ++r) {
-    for (size_t c = 0; c < full_blocks; c += 8) {
-      float *ptr = &qk_out[(start_row + r) * num_heads + c];
-      __m256 val = _mm256_loadu_ps(ptr); // already exp(x - max)
-      __m256 sumv = _mm256_loadu_ps(&sum_vals[c]);
-      __m256 soft = _mm256_div_ps(val, sumv);
-      _mm256_storeu_ps(ptr, soft);
-    }
-    for (size_t c = full_blocks; c < num_heads; ++c) {
-      qk_out[(start_row + r) * num_heads + c] /= sum_vals[c];
+    for (size_t c = vec_end; c < num_heads; ++c) {
+      row[c] *= sum_vals[c];
     }
   }
 
@@ -1242,55 +1413,87 @@ static void softmax_row_inplace(float *qk_out, size_t start_row, size_t end_row,
 static void softmax_row_with_sink_inplace(float *qk_out, size_t start_row,
                                           size_t end_row, size_t num_heads,
                                           float *sink) {
-  size_t row_range = end_row - start_row;
-  const size_t full_blocks = (num_heads / 8) * 8;
+  const size_t vec_end = num_heads & ~((size_t)7); // floor(num_heads / 8) * 8
 
+  // 1. find max for each head
   float *max_vals = new float[num_heads];
+
+  // initialize max_vals with sink
+  std::memcpy(max_vals, sink, num_heads * sizeof(float));
+
+  // update max_vals for each row
+  for (size_t r = start_row; r < end_row; ++r) {
+    float *row = qk_out + (num_heads * r);
+    for (size_t c = 0; c < vec_end; c += 8) {
+      __m256 v = _mm256_loadu_ps(row + c);
+      __m256 m = _mm256_loadu_ps(max_vals + c);
+      m = _mm256_max_ps(v, m);
+      _mm256_storeu_ps(max_vals + c, m);
+    }
+    for (size_t c = vec_end; c < num_heads; ++c) {
+      max_vals[c] = std::max(max_vals[c], row[c]);
+    }
+  }
+
+  // 2. calc exp(x - max) and sum
   float *sum_vals = new float[num_heads];
-  // 1. max
-  for (size_t c = 0; c < num_heads; ++c) {
-    float max_val = -INFINITY;
-    for (size_t r = start_row; r < end_row; ++r)
-      max_val = std::max(max_val, qk_out[r * num_heads + c]);
-    max_vals[c] = std::max(sink[c], max_val);
+  // init sum_vals with exp(sink - max)
+  {
+    for (size_t c = 0; c < vec_end; c += 8) {
+      __m256 v = _mm256_loadu_ps(sink + c);
+      __m256 m = _mm256_loadu_ps(max_vals + c);
+      __m256 d = _mm256_sub_ps(v, m); // sink - max
+      __m256 e = exp256_ps(d);        // exp(sink - max)
+      _mm256_storeu_ps(sum_vals + c, e);
+    }
+    for (size_t c = vec_end; c < num_heads; ++c) {
+      float e = std::exp(sink[c] - max_vals[c]);
+      sum_vals[c] = e;
+    }
   }
 
-  // 2. inplace exp + sum
-  for (size_t c = 0; c < full_blocks; c += 8) {
-    __m256 maxv = _mm256_loadu_ps(&max_vals[c]);
-    __m256 sum = _mm256_loadu_ps(&sink[c]);
-    sum = exp256_ps(_mm256_sub_ps(sum, maxv));
-    for (size_t r = 0; r < row_range; ++r) {
-      float *ptr = &qk_out[(start_row + r) * num_heads + c];
-      __m256 val = _mm256_loadu_ps(ptr);
-      __m256 e = exp256_ps(_mm256_sub_ps(val, maxv));
-      _mm256_storeu_ps(ptr, e); // overwrite qk_out
-      sum = _mm256_add_ps(sum, e);
+  for (size_t r = start_row; r < end_row; ++r) {
+    float *row = qk_out + (num_heads * r);
+    for (size_t c = 0; c < vec_end; c += 8) {
+      __m256 s = _mm256_loadu_ps(sum_vals + c);
+      __m256 v = _mm256_loadu_ps(row + c);
+      __m256 m = _mm256_loadu_ps(max_vals + c);
+      __m256 d = _mm256_sub_ps(v, m);    // x - max
+      __m256 e = exp256_ps(d);           // exp(x - max)
+      _mm256_storeu_ps(row + c, e);      // overwrite qk_out
+      s = _mm256_add_ps(s, e);           // sum += exp(x - max)
+      _mm256_storeu_ps(sum_vals + c, s); // update sum_vals
     }
-    _mm256_storeu_ps(&sum_vals[c], sum);
+    for (size_t c = vec_end; c < num_heads; ++c) {
+      float e = std::exp(row[c] - max_vals[c]);
+      row[c] = e;
+      sum_vals[c] += e;
+    }
   }
 
-  for (size_t c = full_blocks; c < num_heads; ++c) {
-    float maxv = max_vals[c];
-    float sum = std::exp(sink[c] - maxv);
-    for (size_t r = 0; r < row_range; ++r) {
-      float &a = qk_out[(start_row + r) * num_heads + c];
-      a = std::exp(a - maxv); // overwrite qk_out
-      sum += a;
-    }
-    sum_vals[c] = sum;
+  // 3. calc 1/sum
+  // _mm256_div_ps is slow
+  // precalculate (1/sum) and then multiply is much faster
+  for (size_t c = 0; c < vec_end; c += 8) {
+    __m256 s = _mm256_loadu_ps(sum_vals + c);
+    s = rcp_ps(s); // sum = 1/sum
+    _mm256_storeu_ps(sum_vals + c, s);
   }
-  // 3. softmax = exp / sum (inplace)
-  for (size_t r = 0; r < row_range; ++r) {
-    for (size_t c = 0; c < full_blocks; c += 8) {
-      float *ptr = &qk_out[(start_row + r) * num_heads + c];
-      __m256 val = _mm256_loadu_ps(ptr); // already exp(x - max)
-      __m256 sumv = _mm256_loadu_ps(&sum_vals[c]);
-      __m256 soft = _mm256_div_ps(val, sumv);
-      _mm256_storeu_ps(ptr, soft);
+  for (size_t c = vec_end; c < num_heads; ++c) {
+    sum_vals[c] = 1 / sum_vals[c];
+  }
+
+  // 4. calc exp(x - max) * (1/sum)
+  for (size_t r = start_row; r < end_row; ++r) {
+    float *row = qk_out + (num_heads * r);
+    for (size_t c = 0; c < vec_end; c += 8) {
+      __m256 s = _mm256_loadu_ps(sum_vals + c); // 1/sum
+      __m256 v = _mm256_loadu_ps(row + c);      // exp(x - max)
+      __m256 o = _mm256_mul_ps(v, s);           // exp(x - max) * (1/sum)
+      _mm256_storeu_ps(row + c, o);             // overwrite qk_out
     }
-    for (size_t c = full_blocks; c < num_heads; ++c) {
-      qk_out[(start_row + r) * num_heads + c] /= sum_vals[c];
+    for (size_t c = vec_end; c < num_heads; ++c) {
+      row[c] *= sum_vals[c];
     }
   }
 
@@ -1311,121 +1514,13 @@ void softmax_row_inplace(float *qk_out, size_t start_row, size_t end_row,
 
 static void softmax_row(float *qk_out, size_t start_row, size_t end_row,
                         size_t num_heads) {
-  const size_t full_block = (num_heads / 8) * 8;
-
-  float *max_vals = new float[num_heads];
-  float *sum_vals = new float[num_heads];
-
-  // 1. Find Max along with col
-  for (size_t c = 0; c < num_heads; ++c) {
-    float max_val = -INFINITY;
-    for (size_t r = start_row; r < end_row; ++r) {
-      max_val = std::max(max_val, qk_out[r * num_heads + c]);
-    }
-    max_vals[c] = max_val;
-  }
-
-  // 2. Compute sum along with col (exp vectorized)
-  for (size_t c = 0; c < full_block; c += 8) {
-    __m256 sum = _mm256_setzero_ps();
-    for (size_t r = start_row; r < end_row; ++r) {
-      __m256 val = _mm256_loadu_ps(&qk_out[r * num_heads + c]);
-      __m256 maxv = _mm256_loadu_ps(&max_vals[c]);
-      __m256 sub = _mm256_sub_ps(val, maxv);
-      __m256 e = exp256_ps(sub);
-      sum = _mm256_add_ps(sum, e);
-    }
-    _mm256_storeu_ps(&sum_vals[c], sum);
-  }
-
-  for (size_t c = full_block; c < num_heads; ++c) {
-    float sum = 0.0f;
-    for (size_t r = start_row; r < end_row; ++r) {
-      sum += std::exp(qk_out[r * num_heads + c] - max_vals[c]);
-    }
-    sum_vals[c] = sum;
-  }
-
-  // 3. apply softmax
-  for (size_t r = start_row; r < end_row; ++r) {
-    for (size_t c = 0; c < full_block; c += 8) {
-      __m256 val = _mm256_loadu_ps(&qk_out[r * num_heads + c]);
-      __m256 maxv = _mm256_loadu_ps(&max_vals[c]);
-      __m256 sub = _mm256_sub_ps(val, maxv);
-      __m256 e = exp256_ps(sub);
-      __m256 sumv = _mm256_loadu_ps(&sum_vals[c]);
-      __m256 softmax = _mm256_div_ps(e, sumv);
-      _mm256_storeu_ps(&qk_out[r * num_heads + c], softmax);
-    }
-    for (size_t c = full_block; c < num_heads; ++c) {
-      qk_out[r * num_heads + c] =
-        std::exp(qk_out[r * num_heads + c] - max_vals[c]) / sum_vals[c];
-    }
-  }
-
-  delete[] max_vals;
-  delete[] sum_vals;
+  softmax_row_inplace(qk_out, start_row, end_row, num_heads);
 }
 
 static void softmax_row_with_sink(float *qk_out, size_t start_row,
                                   size_t end_row, size_t num_heads,
                                   float *sink) {
-  const size_t full_block = (num_heads / 8) * 8;
-
-  float *max_vals = new float[num_heads];
-  float *sum_vals = new float[num_heads];
-
-  // 1. Find Max along with col
-  for (size_t c = 0; c < num_heads; ++c) {
-    float max_val = -INFINITY;
-    for (size_t r = start_row; r < end_row; ++r) {
-      max_val = std::max(max_val, qk_out[r * num_heads + c]);
-    }
-    max_vals[c] = std::max(max_val, sink[c]);
-  }
-
-  // 2. Compute sum along with col (exp vectorized)
-  for (size_t c = 0; c < full_block; c += 8) {
-    __m256 maxv = _mm256_loadu_ps(&max_vals[c]);
-    __m256 sum = _mm256_loadu_ps(&sink[c]);
-    sum = _mm256_sub_ps(sum, maxv);
-    sum = exp256_ps(sum);
-    for (size_t r = start_row; r < end_row; ++r) {
-      __m256 val = _mm256_loadu_ps(&qk_out[r * num_heads + c]);
-      __m256 sub = _mm256_sub_ps(val, maxv);
-      __m256 e = exp256_ps(sub);
-      sum = _mm256_add_ps(sum, e);
-    }
-    _mm256_storeu_ps(&sum_vals[c], sum);
-  }
-
-  for (size_t c = full_block; c < num_heads; ++c) {
-    float sum = std::exp(sink[c] - max_vals[c]);
-    for (size_t r = start_row; r < end_row; ++r) {
-      sum += std::exp(qk_out[r * num_heads + c] - max_vals[c]);
-    }
-    sum_vals[c] = sum;
-  }
-
-  // 3. apply softmax
-  for (size_t r = start_row; r < end_row; ++r) {
-    for (size_t c = 0; c < full_block; c += 8) {
-      __m256 val = _mm256_loadu_ps(&qk_out[r * num_heads + c]);
-      __m256 maxv = _mm256_loadu_ps(&max_vals[c]);
-      __m256 sub = _mm256_sub_ps(val, maxv);
-      __m256 e = exp256_ps(sub);
-      __m256 sumv = _mm256_loadu_ps(&sum_vals[c]);
-      __m256 softmax = _mm256_div_ps(e, sumv);
-      _mm256_storeu_ps(&qk_out[r * num_heads + c], softmax);
-    }
-    for (size_t c = full_block; c < num_heads; ++c) {
-      qk_out[r * num_heads + c] =
-        std::exp(qk_out[r * num_heads + c] - max_vals[c]) / sum_vals[c];
-    }
-  }
-
-  delete[] max_vals;
-  delete[] sum_vals;
+  softmax_row_with_sink_inplace(qk_out, start_row, end_row, num_heads, sink);
 }
 
 template <>
@@ -2116,11 +2211,12 @@ void transform_int4_osv32_isv2_to_q4_0x8(size_t N, size_t K,
   const size_t bytes_per_row_block_span = column_blocks_count * ROW_BLOCK_SIZE;
   const int column_blocks_cnt = K / QK4_0;
 
-  alignas(32) static thread_local __m256i dst_tmp[dst_tmp_size];
-  alignas(32) static thread_local uint8_t mx16x16[16 * 16];
-
-#pragma omp parallel for schedule(guided)
-  for (int row_id = 0; row_id < (int)N; row_id += 16) {
+  const size_t row_iters = (N + 15) / 16;
+  auto &tm = nntrainer::ThreadManager::Global();
+  tm.parallel_for(0, row_iters, [&](size_t iter) {
+    alignas(32) __m256i dst_tmp_local[dst_tmp_size];
+    alignas(32) uint8_t mx16x16_local[16 * 16];
+    int row_id = static_cast<int>(iter) * 16;
     const size_t row_in_block_id = row_id / ROW_BLOCK_SIZE;
     size_t i_in_block = row_id % ROW_BLOCK_SIZE;
     for (int column_out_block_id = 0; column_out_block_id < column_blocks_cnt;
@@ -2132,23 +2228,24 @@ void transform_int4_osv32_isv2_to_q4_0x8(size_t N, size_t K,
       int src_offset =
         row_block_base + column_out_block_id * 16 * ROW_BLOCK_SIZE;
       transpose_matrix_16x16(&osv32_weights[src_offset], ROW_BLOCK_SIZE,
-                             mx16x16, 16);
+                             mx16x16_local, 16);
       int max_r = std::min((size_t)16, N - row_id);
       size_t row_out_block_id = row_id / NUM_Q4_0_BLOCKS;
       int dst_offset =
         (NUM_Q4_0_BLOCKS * sizeof(block_q4_0)) *
         (column_out_block_id + row_out_block_id * column_blocks_cnt);
       for (int r = 0; r < max_r; r += NUM_Q4_0_BLOCKS) {
-        create_q4_0_weights_x8(&mx16x16[16 * r], dst_tmp);
+        create_q4_0_weights_x8(&mx16x16_local[16 * r], dst_tmp_local);
 
-        nntr_make_block_q4_0x8(dst_tmp, (block_q4_0x8 *)(dst_ + dst_offset),
+        nntr_make_block_q4_0x8(dst_tmp_local,
+                               (block_q4_0x8 *)(dst_ + dst_offset),
                                &osv32_scales[scale_offset + row_id + r]);
         row_out_block_id++;
         dst_offset +=
           (NUM_Q4_0_BLOCKS * sizeof(block_q4_0)) * column_blocks_cnt;
       }
     }
-  }
+  });
 }
 
 } // namespace nntrainer::avx2

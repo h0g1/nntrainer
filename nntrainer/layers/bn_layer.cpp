@@ -380,8 +380,7 @@ void BatchNormalizationLayer::save(std::ofstream &file,
                                    RunLayerContext &run_context, bool opt_var,
                                    ml::train::ExecutionMode mode,
                                    bool trainable,
-                                   TensorDim::DataType definedWeightDataType,
-                                   ml::train::ISA target_isa) const {
+                                   TensorDim::DataType definedWeightDataType) const {
   if (opt_var) {
     for (unsigned int i = 0; i < run_context.getNumWeights(); ++i) {
       if (run_context.isGradientFirstAccess(i) && trainable) {

@@ -18,6 +18,7 @@
 #include <node_exporter.h>
 #include <tensor.h>
 #include <tensor_dim.h>
+#include <thread_manager.h>
 #include <tie_word_embedding.h>
 #include <util_func.h>
 
@@ -221,8 +222,8 @@ void TieWordEmbedding::incremental_forwarding_embedding(
     nntrainer::Tensor batchsliced_hidden = hidden_.getBatchSlice(b, 1);
     int iter = to - from;
 
-#pragma omp parallel for
-    for (int i = 0; i < iter; ++i) {
+    auto &tm = nntrainer::ThreadManager::Global();
+    tm.parallel_for(0, static_cast<size_t>(iter), [&](size_t i) {
       unsigned int embed_idx = static_cast<unsigned int>(in_data[i]);
       if (embed_idx >= in_dim) {
         throw std::invalid_argument("input word index is greater than in_dim");
@@ -247,7 +248,7 @@ void TieWordEmbedding::incremental_forwarding_embedding(
       if (scale != 1.0f) {
         out_tensor.multiply_i(scale);
       }
-    }
+    });
 
 #ifdef DEBUG
     std::cout << context.getName() << " : "
@@ -281,9 +282,7 @@ void TieWordEmbedding::incremental_forwarding_lmhead(
   for (unsigned int b = 0; b < b_size; ++b) {
     nntrainer::Tensor input_step = input_.getSharedDataTensor(
       input_step_dim,
-      b * input_dim.getFeatureLen() +
-        (to - from == 1 ? 0 : (to - 1) * input_.width()),
-      true);
+      b * input_dim.getFeatureLen() + (to - from - 1) * input_.width(), true);
     nntrainer::Tensor hidden_step = hidden_.getSharedDataTensor(
       hidden_step_dim, b * hidden_dim.getFeatureLen(), true);
 
@@ -338,6 +337,7 @@ void TieWordEmbedding::updateTensorsByInputDimensions(
   context.updateOutput(SINGLE_INOUT_IDX, out_dim);
 }
 
+
 void TieWordEmbedding::read(
   std::ifstream &file, nntrainer::RunLayerContext &context, bool opt_var,
   ml::train::ExecutionMode mode, bool trainable,
@@ -349,28 +349,7 @@ void TieWordEmbedding::read(
     for (unsigned int i = 0; i < context.getNumWeights(); ++i) {
       /// @note shared weights are only be read at the first acecss
       if (context.isGradientFirstAccess(i)) {
-        context.getWeight(i).read(file, start_offset, read_from_offset);
-        if (context.isMixedPrecision(i) && trainable &&
-            !context.getWeightFP32(i).empty()) {
-          context.getWeightFP32(i).copyData(context.getWeight(i));
-        }
-      }
-    }
-  }
-}
-
-void TieWordEmbedding::read(
-  nntrainer::ReadSource src, nntrainer::RunLayerContext &context, bool opt_var,
-  ml::train::ExecutionMode mode, bool trainable,
-  nntrainer::TensorDim::DataType definedWeightDataType, bool fsu,
-  size_t start_offset, bool read_from_offset) {
-
-  // Only read when mode is embedding
-  if (mode_ == mode::embedding) {
-    for (unsigned int i = 0; i < context.getNumWeights(); ++i) {
-      /// @note shared weights are only be read at the first acecss
-      if (context.isGradientFirstAccess(i)) {
-        context.getWeight(i).read(src, start_offset, read_from_offset);
+        context.getWeight(i).read(file);
         if (context.isMixedPrecision(i) && trainable &&
             !context.getWeightFP32(i).empty()) {
           context.getWeightFP32(i).copyData(context.getWeight(i));
@@ -384,8 +363,7 @@ void TieWordEmbedding::save(std::ofstream &file,
                             nntrainer::RunLayerContext &run_context,
                             bool opt_var, ml::train::ExecutionMode mode,
                             bool trainable,
-                            nntrainer::TensorDim::DataType dtype,
-                            ml::train::ISA target_isa) const {
+                            nntrainer::TensorDim::DataType dtype) const {
   // Only read when mode is embedding
   if (mode_ == mode::embedding) {
     // @note shared weights are only be saved at the first access

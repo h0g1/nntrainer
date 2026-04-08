@@ -118,8 +118,7 @@ public:
                        bool trainable,
                        nntrainer::TensorDim::DataType definedWeightDataType,
                        bool fsu = false, size_t start_offset = 0,
-                       bool read_from_offset = false,
-                       int file_fd = -1) override;
+                       bool read_from_offset = false, int file_fd=-1) override;
 
   /**
    * @copydoc Layer::read() (ReadSource/mmap variant)
@@ -137,8 +136,7 @@ public:
   WIN_EXPORT void save(
     std::ofstream &file, nntrainer::RunLayerContext &run_context, bool opt_var,
     ml::train::ExecutionMode mode, bool trainable,
-    nntrainer::TensorDim::DataType dtype = nntrainer::TensorDim::DataType::NONE,
-    ml::train::ISA target_isa = ml::train::ISA::AUTO) const override;
+    nntrainer::TensorDim::DataType dtype = nntrainer::TensorDim::DataType::NONE) const override;
 
   using Layer::setProperty;
 

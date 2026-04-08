@@ -617,20 +617,14 @@ void NeuralNetwork::backwarding(int iteration,
   }
 }
 
-void NeuralNetwork::save(
-  const std::string &file_path, ml::train::ModelFormat format,
-  TensorDim::DataType dtype,
-  const std::map<std::string, TensorDim::DataType> &layer_dtype_map,
-  ml::train::ISA target_isa) {
+
+
+void NeuralNetwork::save(const std::string &file_path,
+                         ml::train::ModelFormat format, TensorDim::DataType dtype,
+                         const std::map<std::string, TensorDim::DataType> &layer_dtype_map) {
   NNTR_THROW_IF(!initialized, std::runtime_error)
     << "Cannot save model if not initialized yet, path: " << file_path
     << " format: " << static_cast<unsigned>(format);
-
-  NNTR_THROW_IF(format != ml::train::ModelFormat::MODEL_FORMAT_BIN &&
-                  dtype != TensorDim::DataType::NONE,
-                std::runtime_error)
-    << "Cannot save the model with a specific data type unless the model "
-       "format is `MODEL_FORMAT_BIN`.";
 
   /// @todo this switch case should be delegating the function call only. It's
   /// not delegating for now as required logics are manageable for now.
@@ -640,10 +634,7 @@ void NeuralNetwork::save(
       file_path, std::ios::out | std::ios::binary | std::ios::trunc);
 
     for (auto iter = model_graph.cbegin(); iter != model_graph.cend(); iter++) {
-      const auto &layer_node = *iter;
-      auto it = layer_dtype_map.find(layer_node->getName());
-      auto target_dtype = (it != layer_dtype_map.end()) ? it->second : dtype;
-      layer_node->save(model_file, false, exec_mode, target_dtype, target_isa);
+      (*iter)->save(model_file, false, exec_mode);
     }
 
     if (opt && istrequal(opt->getType(), "adam")) {
@@ -688,6 +679,8 @@ void NeuralNetwork::save(
   }
 }
 
+
+
 void NeuralNetwork::load(const std::string &file_path,
                          ml::train::ModelFormat format) {
   /// @todo this switch case should be delegating the function call only. It's
@@ -700,21 +693,22 @@ void NeuralNetwork::load(const std::string &file_path,
 
   size_t start_from = 0;
   std::vector<std::pair<size_t, size_t>> file_offset;
-  std::unordered_set<const Tensor *> visited_weights;
   for (auto iter = model_graph.cbegin(); iter != model_graph.cend(); iter++) {
     auto weights = (*iter)->getRunContext().getWeights();
     for (auto weight : weights) {
-      // Shared weights (e.g., TieWordEmbedding) reference the same Tensor
-      // object via requestOrExtend. Calling setFileOffset on the second
-      // occurrence overwrites the correct offset by the first.
-      // Skip duplicates so that:
-      // 1. file_offset is only set once (at the positin where save writes)
-      // 2. start_from is only advanced once (matching actual file layout)
-      if (!visited_weights.insert(&weight->getVariableRef()).second) {
-        continue;
-      }
       size_t size = weight->getVariable().getMemoryBytes();
       auto tensor_data_type = weight->getDim().getDataType();
+      
+      if (tensor_data_type == TensorDim::DataType::QINT4){
+        //QINT4 but read as Q4_0
+        uint32_t K = weight->getVariable().height();
+        uint32_t N = weight->getVariable().width();
+        nntrainer::Tensor W_q40(1, 1, K, N, {ml::train::TensorDim::Format::NCHW, ml::train::TensorDim::DataType::Q4_0});
+        //size = N * K;
+        size = W_q40.getMemoryBytes();
+      }
+      
+      //std::cout << start_from << std::endl;
       weight->getVariableRef().setFileOffset(start_from);
       ///@todo instead of checking the data type,
       /// we may need to create a common parent class for
@@ -724,7 +718,8 @@ void NeuralNetwork::load(const std::string &file_path,
       if (tensor_data_type != TensorDim::DataType::FP32 &&
           tensor_data_type != TensorDim::DataType::FP16 &&
           tensor_data_type != TensorDim::DataType::Q6_K &&
-          tensor_data_type != TensorDim::DataType::Q4_0) {
+          tensor_data_type != TensorDim::DataType::Q4_0 &&
+          tensor_data_type != TensorDim::DataType::QINT4) {
         // for tensor with qparam
         size += sizeof(uint16_t);
       }

@@ -23,15 +23,19 @@
 #define __LAYER_DEVEL_H__
 #ifdef __cplusplus
 
+#include "kleidiai_interface.h"
+
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <base_properties.h>
 #include <common.h>
-#include <cpu_backend.h>
 #include <layer_context.h>
 #include <tensor_dim.h>
+#include <cpu_backend.h>
+#include <fallback_internal.h>
+#include <iostream>
 
 namespace ml::train {
 class Layer;
@@ -350,14 +354,11 @@ public:
    * @param opt_var boolean variable whether saving optimizer variables
    * @param mode Execution mode
    * @param trainable is there trainable weight
-   * @param dtype data type to save this layer
-   * @param target_isa target ISA (Instruction Set Architecture) format for
-   * quantization (AUTO/X86/ARM)
+   * @param definedWeightDataTey current data type of the layer
    */
   virtual void save(std::ofstream &file, RunLayerContext &run_context,
                     bool opt_var, ml::train::ExecutionMode mode, bool trainable,
-                    TensorDim::DataType dtype = TensorDim::DataType::NONE,
-                    ml::train::ISA target_isa = ml::train::ISA::AUTO) const {
+                    TensorDim::DataType definedWeightDataType) const {
 
     if (opt_var) {
       for (unsigned int i = 0; i < run_context.getNumWeights(); ++i) {
@@ -375,47 +376,7 @@ public:
       // @note shared weights are only be saved at the first access
       for (unsigned int i = 0; i < run_context.getNumWeights(); ++i) {
         if (run_context.isGradientFirstAccess(i)) {
-          auto &weight = run_context.getWeight(i);
-          if (dtype == TensorDim::DataType::NONE ||
-              weight.getDataType() == dtype)
-            weight.save(file);
-          else {
-            if (dtype == TensorDim::DataType::Q4_0) {
-              NNTR_THROW_IF(weight.getDataType() != TensorDim::DataType::FP32,
-                            std::runtime_error)
-                << "Save with quantization only supports for FP32 weight.";
-              ///@note The codelines below can be replaced with quantizer's
-              /// quantize()
-              TensorDim dim = weight.getDim();
-              unsigned int K = dim.height();
-              unsigned int N = dim.width();
-
-              // Skip quantization for bias-like tensors (1D with height == 1)
-              // as they are not suitable for Q4_0 block quantization
-              if (K == 1) {
-                weight.save(file);
-              } else {
-                NNTR_THROW_IF(N % 32 != 0 || K % 32 != 0, std::invalid_argument)
-                  << "Q4_0 quantization requires both width and height to be "
-                     "divisible by 32, but got height="
-                  << K << ", width=" << N;
-
-                Tensor weight_t = weight.transpose("0:2:1");
-                Tensor quant_weight(dim.batch(), dim.channel(), K, N,
-                                    {Tformat::NCHW, dtype});
-                std::vector<char> tmp(quant_weight.size());
-
-                quantize_q4_0(weight_t.getData<float>(), tmp.data(), N, K,
-                              nullptr);
-                repack_q4_0(quant_weight.getData<uint8_t>(), tmp.data(),
-                            quant_weight.size(), N, K, target_isa);
-                quant_weight.save(file);
-              }
-            } else {
-              NNTR_THROW_IF(true, std::runtime_error)
-                << "This dtype is not supported in save with quantization";
-            }
-          }
+          run_context.getWeight(i).save(file);
         }
       }
     }
@@ -459,8 +420,88 @@ public:
         for (unsigned int i = 0; i < run_context.getNumWeights(); ++i) {
           /// @note shared weights are only be read at the first acecss
           if (run_context.isGradientFirstAccess(i)) {
+            
+            if (run_context.getWeight(i).getDataType() == nntrainer::Tdatatype::QINT4){
+              nntrainer::Tensor W_qint4 = run_context.getWeight(i);
+              uint32_t K = W_qint4.height();
+              uint32_t N = W_qint4.width();
+
+              nntrainer::TensorDim dim_q40(1, 1, K, N, TensorDim::Format::NCHW, nntrainer::Tdatatype::Q4_0);
+              nntrainer::Tensor W_q40(dim_q40);
+              
+              std::cout << K << " " << N << std::endl;
+              //std::cout << W_qint4.getFileOffset() << std::endl;
+              W_q40.allocate();
+              W_qint4.allocate();
+              //std::cout << W_q40.isVirtual() << std::endl;
+              //W_q40.setFileOffset(start_offset);
+              //W_qint4.read(file, start_offset, read_from_offset, file_fd);
+              W_q40.setFileOffset(W_qint4.getFileOffset());
+              W_q40.read(file, start_offset, read_from_offset, file_fd);
+              
+              //float * f1 = W_q40.getData<float>();
+              //void *k = W_qint4.getData();
+              //std::cout << W_qint4.getFileOffset() << std::endl;
+              
+              //W_qint4.read(file, start_offset, read_from_offset, file_fd);
+              //float * f2 = W_qint4.getData<float>();
+
+              //std::cout << read_from_offset << std::endl;
+              
+              // std::cout << W_qint4.getFileOffset() << std::endl;
+              
+              //std::cout << W_qint4.getDataType() << std::endl;
+              //std::cout << W_qint4.getData() << std::endl;
+              
+             
+              //nntrainer::scopy(W_qint4.getMemoryBytes()/4, W_qint4.getData<float>(), 1, W_qint4.getData<float>(), 1);
+              //W_qint4.copy
+              
+              std::vector<float> weight_fp32 (N * K);
+              
+             
+
+              size_t rhs_native_size_qs4cx = static_cast<size_t>(N) * (((K + 2 - 1) / 2) * 2 / 2) * sizeof(uint8_t); //nxk
+              size_t rhs_scales_size_f32 = N * sizeof(float);
+
+              std::vector<uint8_t> unpacked_weight (std::max(W_q40.getMemoryBytes(), rhs_native_size_qs4cx));
+              
+              //std::vector<uint8_t> kai_quant_data(rhs_native_size_qs4cx);
+              std::vector<uint8_t> kai_quant_scale(rhs_scales_size_f32);
+
+              //std::cout <<"here?" << std::endl;
+
+              nntrainer::unpack_q4_0((void *)W_q40.getData(), (void *)unpacked_weight.data(), W_q40.getMemoryBytes(), N, K);
+              W_q40.deallocate();
+              nntrainer::dequantize_row_q4_0 ((void *)unpacked_weight.data() , weight_fp32.data(), N*K);
+              //std::cout <<"here2?" << std::endl;
+              //nntrainer::quantize_q4_0(weight_fp32.data(), (void *)unpacked_weight.data(), N, K, nullptr);
+              //nntrainer::repack_q4_0((void *)unpacked_weight.data(), (void *)W_qint4.getData(), W_qint4.getMemoryBytes(), N, K);
+              //std::memcpy(W_qint4.getData(), W_q40.getData(), W_qint4.getMemoryBytes());
+              //std::cout << W_qint4.getMemoryBytes() << std::endl;
+              
+              
+
+
+              nntrainer::nntr_quant_qs4cx_f32(N, K, (void *)weight_fp32.data(), (void *)unpacked_weight.data(), (void *)kai_quant_scale.data());
+           
+              //std::cout << "Here?" << std::endl;
+              nntr_kai_qsi4cxp_qs4cxs1s0_rhs_pack(N, K,
+                                        W_qint4.getData(),
+                                        unpacked_weight.data(),
+                                        kai_quant_scale.data(),
+                                        3, true);    
+              //std::cout << W_qint4.getFileOffset() << std::endl;
+              //std::cout <<"here3?" << std::endl;                                           
+
+
+            }
+            
+            
+            else{
             run_context.getWeight(i).read(file, start_offset, read_from_offset,
                                           file_fd);
+            }
             if (run_context.isMixedPrecision(i) && trainable &&
                 !run_context.getWeightFP32(i).empty()) {
               run_context.getWeightFP32(i).copyData(run_context.getWeight(i));
@@ -486,6 +527,8 @@ public:
                     ml::train::ExecutionMode mode, bool trainable,
                     TensorDim::DataType defineWeightDataType, bool fsu,
                     size_t start_offset = 0, bool read_from_offset = false) {
+    
+    
     if (fsu) {
       for (unsigned int i = 0; i < run_context.getNumWeights(); ++i) {
         if (run_context.getWeight(i).getDataType() ==
@@ -508,7 +551,60 @@ public:
         for (unsigned int i = 0; i < run_context.getNumWeights(); ++i) {
           /// @note shared weights are only be read at the first acecss
           if (run_context.isGradientFirstAccess(i)) {
-            run_context.getWeight(i).read(src, start_offset, read_from_offset);
+
+
+            //run_context.getWeight(i).read(src, start_offset, read_from_offset);
+            std::cout << "Why you here?" << std::endl;
+            if (run_context.getWeight(i).getDataType() == nntrainer::Tdatatype::Q4_0){
+              nntrainer::Tensor W_qint4 = run_context.getWeight(i);
+              uint32_t K = W_qint4.height();
+              uint32_t N = W_qint4.width();
+
+              nntrainer::Tensor W_q40(1, 1, K, N, {ml::train::TensorDim::Format::NCHW, ml::train::TensorDim::DataType::Q4_0});
+
+              W_q40.read(src, start_offset, read_from_offset);
+
+              //nntrainer::TensorDim q4_0_dim(1, 1, K, N, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::Q4_0);
+              //nntrainer::Tensor q4_0_weight_tensor(q4_0_dim);
+              
+              // Quantize using low-level API (since Tensor::copyData doesn't support QINT4)
+              //const size_t block_size = 32;
+              //size_t num_blocks = (N * K) / block_size;
+              //size_t q4_0_size = W_q40.getMemoryBytes();
+              //std::vector<uint8_t> q4_0_data(q4_0_size);
+              //nntrainer::quantize_q4_0(W_fp32.getData(), (void *)q4_0_data.data(), N, K, nullptr);
+              //std::vector<uint8_t> q4_0_repacked(q4_0_size);
+              //nntrainer::repack_q4_0(q4_0_data.data(), W_q40.getData(), q4_0_size, N, K);
+
+              std::vector<float> weight_fp32 (N * K);
+              std::vector<uint8_t> unpacked_weight (W_q40.getMemoryBytes());
+
+              nntrainer::unpack_q4_0(W_q40.getData(), unpacked_weight.data(), W_q40.getMemoryBytes(), N, K);
+              nntrainer::dequantize_row_q4_0 (unpacked_weight.data(), weight_fp32.data(), N * K);
+              
+              nntrainer::quantize_q4_0(weight_fp32.data(), unpacked_weight.data(), N, K, nullptr);
+              nntrainer::repack_q4_0(unpacked_weight.data(), W_qint4.getData(), W_qint4.getMemoryBytes(), N, K);
+              //const size_t rhs_native_size_qs4cx = static_cast<size_t>(N) * (((K + 2 - 1) / 2) * 2 / 2) * sizeof(uint8_t); //nxk
+              //const size_t rhs_scales_size_f32 = N * sizeof(float);
+
+              //std::vector<uint8_t> kai_quant_data(rhs_native_size_qs4cx);
+              //std::vector<uint8_t> kai_quant_scale(rhs_scales_size_f32);
+
+
+              //nntrainer::nntr_quant_qs4cx_f32(N, K, weight_fp32.data(), kai_quant_data.data(), kai_quant_scale.data());
+
+              //nntr_kai_qsi4cxp_qs4cxs1s0_rhs_pack(N, K,
+              //                            W_qint4.getData(),
+              //                            kai_quant_data.data(),
+              //                            kai_quant_scale.data(),
+              //                            4, true);     
+
+
+            }
+            else{
+              run_context.getWeight(i).read(src, start_offset, read_from_offset);
+            }
+
             if (run_context.isMixedPrecision(i) && trainable &&
                 !run_context.getWeightFP32(i).empty()) {
               run_context.getWeightFP32(i).copyData(run_context.getWeight(i));

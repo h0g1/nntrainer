@@ -266,7 +266,7 @@ void Transformer::save_weight(
 
   try {
     model->save(weight_path, ml::train::ModelFormat::MODEL_FORMAT_BIN, dtype,
-                layer_dtype_map, target_isa);
+                layer_dtype_map);
   } catch (const std::exception &e) {
     throw std::runtime_error("Failed to save model weights with dtype: " +
                              std::string(e.what()));
