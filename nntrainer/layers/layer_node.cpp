@@ -822,9 +822,18 @@ void LayerNode::forwarding(bool training) {
 void LayerNode::incremental_forwarding(unsigned int from, unsigned int to,
                                        bool training) {
   loss->set(run_context->getRegularizationLoss());
+  auto start_prefill = std::chrono::high_resolution_clock::now();
   PROFILE_TIME_START(forward_event_key);
   // std::cerr << getType() << "\n";
   layer->incremental_forwarding(*run_context, from, to, training);
+  
+  auto finish_prefill = std::chrono::high_resolution_clock::now();
+  auto prefill_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+    finish_prefill - start_prefill);
+
+  std::cout << "layer_name: " << getName() << ", \t"
+            << "time: " << prefill_duration.count() << " us \n";
+
   PROFILE_TIME_END(forward_event_key);
   TRACE_MEMORY() << getName() + ": F";
   TRACE_TIME() << getName() + ": F";

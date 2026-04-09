@@ -23,6 +23,7 @@
 #include <short_tensor.h>
 #include <tensor.h>
 #include <uint4_tensor.h>
+#include <kai4_tensor.h>
 #include <uint_tensor.h>
 
 #ifdef ENABLE_FP16
@@ -146,7 +147,7 @@ Tensor::Tensor(std::string name_, Tformat fm, Tdatatype d_type) {
   } else if (d_type == Tdatatype::QINT8) {
     itensor_ = std::make_unique<CharTensor>(name_, fm);
   } else if (d_type == Tdatatype::QINT4) {
-    itensor_ = std::make_unique<Int4QTensor>(name_, fm);
+    itensor_ = std::make_unique<Kai4Tensor>(name_, fm);
   } else if (d_type == Tdatatype::BCQ) {
 #ifdef ENABLE_BIQGEMM
     itensor_ = std::make_unique<BCQTensor>(name_, fm);
@@ -200,7 +201,7 @@ Tensor::Tensor(const TensorDim &d, bool alloc_now, Initializer init,
   } else if (d.getDataType() == Tdatatype::QINT8) {
     itensor_ = std::make_unique<CharTensor>(d, alloc_now, init, name, qscheme);
   } else if (d.getDataType() == Tdatatype::QINT4) {
-    itensor_ = std::make_unique<Int4QTensor>(d, alloc_now, init, name, qscheme);
+    itensor_ = std::make_unique<Kai4Tensor>(d, alloc_now, init, name, qscheme);
   } else if (d.getDataType() == Tdatatype::BCQ) {
 #ifdef ENABLE_BIQGEMM
     itensor_ = std::make_unique<BCQTensor>(d, alloc_now, init, name);
@@ -249,7 +250,7 @@ Tensor::Tensor(const TensorDim &d, const void *buf, QScheme qscheme) {
   } else if (d.getDataType() == Tdatatype::QINT8) {
     itensor_ = std::make_unique<CharTensor>(d, buf, qscheme);
   } else if (d.getDataType() == Tdatatype::QINT4) {
-    itensor_ = std::make_unique<Int4QTensor>(d, buf);
+    itensor_ = std::make_unique<Kai4Tensor>(d, buf);
   } else if (d.getDataType() == Tdatatype::BCQ) {
 #ifdef ENABLE_BIQGEMM
     itensor_ = std::make_unique<BCQTensor>(d, buf);
@@ -293,7 +294,7 @@ Tensor::Tensor(const Tensor &rhs) {
   } else if (rhs.getDataType() == Tdatatype::QINT8) {
     itensor_ = std::make_unique<CharTensor>(*rhs.itensor_);
   } else if (rhs.getDataType() == Tdatatype::QINT4) {
-    itensor_ = std::make_unique<Int4QTensor>(*rhs.itensor_);
+    itensor_ = std::make_unique<Kai4Tensor>(*rhs.itensor_);
   } else if (rhs.getDataType() == Tdatatype::BCQ) {
 #ifdef ENABLE_BIQGEMM
     itensor_ = std::make_unique<BCQTensor>(*rhs.itensor_);
@@ -335,7 +336,7 @@ Tensor::Tensor(const std::unique_ptr<TensorBase> &rhs) {
   } else if (rhs->getDataType() == Tdatatype::QINT8) {
     itensor_ = std::make_unique<CharTensor>(*rhs.get());
   } else if (rhs->getDataType() == Tdatatype::QINT4) {
-    itensor_ = std::make_unique<Int4QTensor>(*rhs.get());
+    itensor_ = std::make_unique<Kai4Tensor>(*rhs.get());
   } else if (rhs->getDataType() == Tdatatype::BCQ) {
 #ifdef ENABLE_BIQGEMM
     itensor_ = std::make_unique<BCQTensor>(*rhs.get());
@@ -374,7 +375,7 @@ Tensor &Tensor::operator=(const Tensor &rhs) {
   } else if (rhs.getDataType() == Tdatatype::QINT8) {
     itensor_ = std::make_unique<CharTensor>(*rhs.itensor_);
   } else if (rhs.getDataType() == Tdatatype::QINT4) {
-    itensor_ = std::make_unique<Int4QTensor>(*rhs.itensor_);
+    itensor_ = std::make_unique<Kai4Tensor>(*rhs.itensor_);
   } else if (rhs.getDataType() == Tdatatype::BCQ) {
 #ifdef ENABLE_BIQGEMM
     itensor_ = std::make_unique<BCQTensor>(*rhs.itensor_);
@@ -425,7 +426,7 @@ bool Tensor::operator==(const Tensor &rhs) const {
     } else if (getDataType() == Tdatatype::QINT8) {
       return itensorCompare<CharTensor>(itensor_.get(), rhs.itensor_.get());
     } else if (getDataType() == Tdatatype::QINT4) {
-      return itensorCompare<Int4QTensor>(itensor_.get(), rhs.itensor_.get());
+      return itensorCompare<Kai4Tensor>(itensor_.get(), rhs.itensor_.get());
     } else if (getDataType() == Tdatatype::BCQ) {
 #ifdef ENABLE_BIQGEMM
       return itensorCompare<BCQTensor>(itensor_.get(), rhs.itensor_.get());
@@ -551,6 +552,19 @@ Tensor &Tensor::multiply(Tensor const &m, Tensor &output,
 
   itensor_->multiply(m, output, beta);
   return output;
+}
+
+uint32_t Tensor::getKernelVariant() const {
+#if defined(ENABLE_FP16) && defined(__aarch64__)
+  // Check if underlying tensor is Kai4Tensor
+  if (getDataType() == Tdatatype::QINT4) {
+    auto* kai_tensor = dynamic_cast<Kai4Tensor*>(itensor_.get());
+    if (kai_tensor != nullptr) {
+      return kai_tensor->getKernelVariant();
+    }
+  }
+#endif
+  return 4;  // Default variant
 }
 
 int Tensor::divide_i(float const &value) {

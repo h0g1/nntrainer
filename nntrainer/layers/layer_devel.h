@@ -420,7 +420,7 @@ public:
         for (unsigned int i = 0; i < run_context.getNumWeights(); ++i) {
           /// @note shared weights are only be read at the first acecss
           if (run_context.isGradientFirstAccess(i)) {
-            
+            /*
             if (run_context.getWeight(i).getDataType() == nntrainer::Tdatatype::QINT4){
               nntrainer::Tensor W_qint4 = run_context.getWeight(i);
               uint32_t K = W_qint4.height();
@@ -496,12 +496,12 @@ public:
 
 
             }
+            */
             
-            
-            else{
+            //else{
             run_context.getWeight(i).read(file, start_offset, read_from_offset,
                                           file_fd);
-            }
+            //}
             if (run_context.isMixedPrecision(i) && trainable &&
                 !run_context.getWeightFP32(i).empty()) {
               run_context.getWeightFP32(i).copyData(run_context.getWeight(i));
