@@ -3,7 +3,7 @@
  * Copyright (C) 2024 Sungsik Kong <ss.kong@samsung.com>
  *
  * @file   cpu_backend.h
- * @date   23 April 2024
+ * @date   05 Feb 2026
  * @see    https://github.com/nntrainer/nntrainer
  * @author Sungsik Kong <ss.kong@samsung.com>
  * @bug    No known bugs except for NYI items
@@ -635,7 +635,7 @@ extern void init_backend();
  * @param src q4_0 data
  * @param d_out scale data
  * @param qs_out quantized data
- * @param N number of block
+ * @param N number of ppppblock
  * @param K dim K
  */
 extern void unpack_q4_0x8_transpose16(const void *src, uint16_t *d_out,
@@ -677,6 +677,63 @@ extern void swiglu(const unsigned int N, float *X, float *Y, float *Z);
  */
 extern void swiglu(const unsigned int N, float *X, float *Y, float *Z,
                    float alpha);
+
+/**
+ * @brief tanh_gelu function
+ * Y = 0.5 * X * (1 + tanh(sqrt(2/pi) * (X +
+ *      0.044715 * X^3)))
+ *
+ * @param N number of elements in X
+ * @param X float * for Vector X (input)
+ * @param Y float * for Vector Y (output)
+ */
+extern void tanh_gelu(const unsigned int N, const float *X, float *Y);
+
+/**
+ * @brief tanh_gelu function with neon but as
+ * Y = X / (1 + exp(-pi/4*(X + 0.04
+ *      4715X^3))
+ *
+ * @param N number of elements in X
+ * @param X float * for Vector X (input)
+ * @param Y float * for Vector Y (output)
+ */
+extern void tanh_gelu_v2(const unsigned int N, const float *X, float *Y);
+
+/**
+ * @brief gelu function with neon but as
+ *
+ *
+ * @param N number of elements in X
+ * @param X float * for Vector X (input)
+ * @param Y float * for Vector Y (output)
+ */
+extern void gelu_v2(const unsigned int N, const float *X, float *Y);
+
+/**
+ * @brief tanh_gelu function with neon but as
+ * X = Y / (1 + exp(-pi/4*(Y + 0.04
+ *      4715Y^3)) * Z
+ *
+ * @param N number of elements in X
+ * @param X float * for Vector X (output)
+ * @param Y float * for Vector Y (input)
+ * @param Z float * for Vector Z (input)
+ */
+extern void tanh_gelu_mul(const unsigned int N, float *X, float *Y, float *Z);
+
+/**
+ * @brief tanh_gelu function with neon but as
+ * X = Y / (1 + exp(-pi/4*(Y + 0.04
+ *      4715Y^3)) * Z
+ *
+ * @param N number of elements in X
+ * @param X float * for Vector X (output)
+ * @param Y float * for Vector Y (input)
+ * @param Z float * for Vector Z (input)
+ */
+extern void tanh_gelu_v2_mul(const unsigned int N, float *X, float *Y,
+                             float *Z);
 
 /**
  * @brief returns maximum value of the vector X
@@ -1192,25 +1249,25 @@ extern void quantize_row_q8_K(const T *src, void *dst, int64_t k);
 /**
  * @brief repack q40 to q40x8
  *
- * @param W input q40
- * @param repacked_W output q40x8
+ * @param dst output repacked data
+ * @param src input quantized data
  * @param data_size total weight size
  * @param M number of rows
  * @param N number of columns
  */
-extern void repack_q4_0(void *W, void *repacked_W, size_t data_size,
+extern void repack_q4_0(void *dst, void *src, size_t data_size,
                         const unsigned int M, const unsigned int N);
 
 /**
  * @brief repack q4K to q4Kx8
  *
- * @param W input q4K
- * @param repacked_W output q4Kx8
+ * @param dst output repacked data
+ * @param src input quantized data
  * @param data_size total weight size
  * @param M number of rows
  * @param N number of columns
  */
-extern void repack_q4_K(void *W, void *repacked_W, size_t data_size,
+extern void repack_q4_K(void *dst, void *src, size_t data_size,
                         const unsigned int M, const unsigned int N);
 
 /**

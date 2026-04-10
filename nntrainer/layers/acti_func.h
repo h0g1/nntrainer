@@ -436,9 +436,8 @@ public:
    */
   template <typename T = float>
   static Tensor &gelu(Tensor const &t_in, Tensor &t_out) {
-    double tmp = 1.0 / sqrt(2.0);
-    t_in.apply<T>(
-      [&](T x) { return static_cast<T>(0.5 * x * (1 + erf(x * tmp))); }, t_out);
+    nntrainer::gelu_v2(t_in.size(), t_in.getData<float>(),
+                       t_out.getData<float>());
     return t_out;
   }
 
@@ -478,14 +477,8 @@ public:
    */
   template <typename T = float>
   static Tensor &tanhGelu(Tensor const &t_in, Tensor &t_out) {
-    t_in.apply<T>(
-      [&](T x) {
-        return static_cast<T>(
-          0.5 * x *
-          (1 + tanhFloat<T>(
-                 static_cast<T>(sqrt(2 / M_PI) * (x + 0.044715 * pow(x, 3))))));
-      },
-      t_out);
+    nntrainer::tanh_gelu(t_in.size(), t_in.getData<float>(),
+                         t_out.getData<float>());
     return t_out;
   }
 

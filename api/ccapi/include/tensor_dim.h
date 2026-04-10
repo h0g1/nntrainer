@@ -66,6 +66,7 @@ public:
     UINT32, /** unsigned int 32 bit */
     FP16,   /** half precision */
     FP32,   /** single precision */
+    NONE,   /** not specified */
   };
 
   /**

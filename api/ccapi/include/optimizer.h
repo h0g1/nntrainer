@@ -16,7 +16,6 @@
 #ifndef __ML_TRAIN_OPTIMIZER_H__
 #define __ML_TRAIN_OPTIMIZER_H__
 
-#include <memory>
 #if __cplusplus >= MIN_CPP_VERSION
 
 #include <string>

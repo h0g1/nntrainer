@@ -222,7 +222,7 @@ private:
 
   /**
    * @brief  Get the Data Type String object
-   * @return std::string of tensor data type (Q4_0)
+   * @return std::string of tensor data type (Q6_K)
    */
   std::string getStringDataType() const override { return "Q4_0"; }
 

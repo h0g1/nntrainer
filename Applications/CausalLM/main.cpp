@@ -41,6 +41,7 @@
 #include "qwen3_embedding.h"
 #include "qwen3_moe_causallm.h"
 #include "qwen3_slim_moe_causallm.h"
+#include <models/gemma3/function.h>
 #include <sys/resource.h>
 
 #include <atomic>
@@ -201,8 +202,8 @@ int main(int argc, char *argv[]) {
   if (argc < 2) {
     std::cerr << "Usage: " << argv[0] << " <model_path> [input_prompt]\n"
               << "  <model_path>   : Path to model directory\n"
-              << "  [input_prompt] : Optional input text (uses sample_input if "
-                 "omitted)\n";
+              << "  [input_prompt] : Optional input text (uses sample_input or "
+                 "chat_input if omitted)\n";
     return EXIT_FAILURE;
   }
 
@@ -219,13 +220,6 @@ int main(int argc, char *argv[]) {
     json generation_cfg =
       causallm::LoadJsonFile(model_path + "/generation_config.json");
     json nntr_cfg = causallm::LoadJsonFile(model_path + "/nntr_config.json");
-
-    // Determine input text
-    if (argc >= 3) {
-      input_text = argv[2];
-    } else {
-      input_text = nntr_cfg["sample_input"].get<std::string>();
-    }
 
     if (nntr_cfg.contains("system_prompt")) {
       system_head_prompt =
@@ -249,11 +243,38 @@ int main(int argc, char *argv[]) {
       architecture = resolve_architecture(model_type, architecture);
     }
 
+    // Determine input text
+    if (argc >= 3) {
+      input_text = argv[2];
+    } else {
+      if (nntr_cfg.contains("chat_input")) {
+        if (architecture == "Gemma3ForCausalLM") {
+          input_text = causallm::gemma3::apply_function_gemma_template(
+            nntr_cfg["chat_input"]);
+        } else {
+          std::cerr << "[Warning] 'chat_input' is set but support for model "
+                       "architecture '"
+                    << architecture
+                    << "' is not implemented. Falling back to 'sample_input'."
+                    << std::endl;
+          input_text = nntr_cfg["sample_input"].get<std::string>();
+        }
+      } else {
+        input_text = nntr_cfg["sample_input"].get<std::string>();
+      }
+    }
+
     auto model = causallm::Factory::Instance().create(architecture, cfg,
                                                       generation_cfg, nntr_cfg);
+    if (!model) {
+      std::cerr << "Unknown architecture: " << architecture << std::endl;
+      std::cerr << "Registered architectures:";
+      causallm::Factory::Instance().printRegistered(std::cerr);
+      std::cerr << std::endl;
+      return EXIT_FAILURE;
+    }
     model->initialize();
     model->load_weight(weight_file);
-    std::cout << "load finished" << std::endl;
 
     bool do_sample = generation_cfg.value("do_sample", false);
 
@@ -265,7 +286,6 @@ int main(int argc, char *argv[]) {
                system_tail_prompt.c_str());
 #else
     model->run(input_text, do_sample, system_head_prompt, system_tail_prompt);
-    model->save_weight("./nntr_qwen3-0.6b-q6k-qint4-qint4-fp32-arm.bin");
 #endif
 #ifdef PROFILE
     stop_and_print_peak();

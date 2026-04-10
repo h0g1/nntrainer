@@ -24,8 +24,6 @@
 #include <cstdint>
 #include <kleidiai_interface.h>
 #include <string>
-#include <thread>
-#include <iostream>
 
 #include "kai/kai_common.h"
 
