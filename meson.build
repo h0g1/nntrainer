@@ -170,6 +170,7 @@ if get_option('enable-fp16')
        extra_defines += '-DARM_ARCH_ARMV9_2A=1'
        extra_defines += '-DENABLE_SVE2=1'
        extra_defines += '-D__ARM_FEATURE_SVE=1'
+       extra_defines += '-D__ARM_FEATURE_SVE2=1'
        extra_defines += '-D__ARM_FEATURE_SME=1'
        extra_defines += '-D__ARM_FEATURE_SME2=1'
 

@@ -3,7 +3,8 @@ kai_headers = [
 ]
 
 kai_sources = [
-    'kai_common_sve_asm.S'
+    'kai_common_sve_asm.S',
+    'kai_common_sme_asm.S'
 ]
 
 subdir('matmul_clamp_f32_qai8dxp_qsi4cxp')

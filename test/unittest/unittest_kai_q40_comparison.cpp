@@ -42,7 +42,6 @@ using std::chrono::seconds;
 
 #define QK4_0 32
 
-#define N_K 8
 
 /**
  * @brief FP16 to float conversion (using memcpy to avoid strict-aliasing warnings)
@@ -93,7 +92,29 @@ static std::vector<T> generate_random_vector(size_t size, float min_val = -1.0f,
   return vec;
 }
 
+
+static void print_macro_status() {
+#ifdef __ARM_FEATURE_SME
+  std::cout << "__ARM_FEATURE_SME defined ";
+#else
+  std::cout << "__ARM_FEATURE_SME NOT defined ";
+#endif
+
+#ifdef __ARM_FEATURE_SME2
+  std::cout << "__ARM_FEATURE_SME2 defined ";
+#else
+  std::cout << "__ARM_FEATURE_SME2 NOT defined ";
+#endif
+
+#ifdef __ARM_FEATURE_SVE2
+  std::cout << "__ARM_FEATURE_SVE2 defined ";
+#else
+  std::cout << "__ARM_FEATURE_SVE2 NOT defined ";
+#endif
+}
+
 static std::vector<std::string> get_kai_kernel_names() {
+  print_macro_status();
   std::vector<std::string> names = {
     "matmul_clamp_f32_qai8dxp1x8_qsi4cxp4x8_1x4x32_neon_dotprod",
     "matmul_clamp_f32_qai8dxp1x8_qsi4cxp8x8_1x8x32_neon_dotprod",
@@ -342,7 +363,7 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
     // j-th ukernel (KAI)
     idx_variant = j;
     nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE, idx_variant);
-    kai_weight_tensor.allocate();W
+    kai_weight_tensor.allocate();
 
     packed_size = nntr_kai_get_rhs_packed_size_qsi4cxp_qs4cxs1s0(N, K, idx_variant, transB);
 
