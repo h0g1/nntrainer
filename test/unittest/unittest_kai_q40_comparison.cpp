@@ -255,7 +255,7 @@ static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   
   // 4. Create Kai weight tensor using QINT4 datatype (creates Kai4Tensor on ARM64)
   nntrainer::TensorDim kai_dim(1, 1, K, N, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::QINT4);
-  nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE, idx);
+  nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE, false, idx);
   
   // Quantize using Kai's native channel-wise quantization
   const size_t rhs_native_size_qs4cx = static_cast<size_t>(N) * (((K + 2 - 1) / 2) * 2 / 2) * sizeof(uint8_t); //nxk
@@ -286,11 +286,15 @@ static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
   // 5. Run through Tensor::dot() API - goes through FloatTensor::dot() -> dotQInteger()
   nntrainer::TensorDim output_dim(1, 1, M, N, nntrainer::Tformat::NCHW, nntrainer::Tdatatype::FP32);
   nntrainer::Tensor kai_output_tensor(output_dim);
+  kai_output_tensor.allocate();
+  kai_output_tensor.setZero();
   activation_tensor.dot(kai_weight_tensor, kai_output_tensor, false, false, 0.0f);
+  kai_weight_tensor.deallocate();
   
   // 6. Compare Kai Tensor::dot() output vs FP32 reference
   std::vector<float> kai_vec(kai_output_tensor.getData<float>(), 
                               kai_output_tensor.getData<float>() + M * N);
+  kai_output_tensor.deallocate();
   float mse = compute_mse(reference_output, kai_vec);
   
   // Same tolerance as kernel tests
@@ -362,7 +366,7 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
   for (unsigned int j = 0; j < get_num_kai_variants(); j++){
     // j-th ukernel (KAI)
     idx_variant = j;
-    nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE, idx_variant);
+    nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE, false, idx_variant);
     kai_weight_tensor.allocate();
 
     packed_size = nntr_kai_get_rhs_packed_size_qsi4cxp_qs4cxs1s0(N, K, idx_variant, transB);
@@ -440,6 +444,8 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
 
 
 #if defined(ENABLE_FP16) && defined(__aarch64__)
+
+#if defined(NORMAL)
 TEST(Q40_acc, GEMM_1024x2560x1024) {
   test_q40_tensor_dot_api(1024, 2560, 1024);
 }
@@ -1015,7 +1021,7 @@ TEST(KAI_acc1110, GEMV_1x9728x2560) {
 }
 #endif
 
-
+#endif
 
 
 

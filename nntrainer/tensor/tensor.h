@@ -69,7 +69,7 @@ public:
   Tensor(const TensorDim &d, bool alloc_now,
          Initializer init = Initializer::NONE, std::string name = "",
          QScheme qscheme_ = QScheme::PER_TENSOR_AFFINE,
-         bool is_virtual = false);
+         bool is_virtual = false, int idx_variant=3);
 
   /**
    * @brief     Constructor of Tensor with dimension/buf

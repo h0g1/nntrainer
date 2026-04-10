@@ -1027,7 +1027,7 @@ Tensor &FloatTensor::dotQInteger(Tensor const &input, Tensor &output,
     
     // Get variant from input Kai4Tensor (via Tensor wrapper)
     uint32_t idx_variant = input.getKernelVariant();
-    
+    //std::cout << idx_variant << std::endl;
     // Call Kai block-32 offline-packed GEMM
     nntr_kai_gemm_qai8dxp_qsi4cxp_olp(
       M, N, K,

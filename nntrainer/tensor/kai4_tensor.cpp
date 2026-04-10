@@ -136,8 +136,7 @@ QScheme Kai4Tensor::q_scheme() const {
 
 
 void Kai4Tensor::setKernelVariant(uint32_t variant_idx) {
-  NNTR_THROW_IF(variant_idx > 7, std::invalid_argument)
-    << "Kai4Tensor::setKernelVariant: variant_idx must be between 0 and 7, got " << variant_idx;
+ 
   
   _idx_variant = variant_idx;
   

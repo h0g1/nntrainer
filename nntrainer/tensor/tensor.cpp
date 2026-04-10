@@ -169,7 +169,7 @@ Tensor::Tensor(std::string name_, Tformat fm, Tdatatype d_type) {
 }
 
 Tensor::Tensor(const TensorDim &d, bool alloc_now, Initializer init,
-               std::string name, QScheme qscheme, bool is_virtual) {
+               std::string name, QScheme qscheme, bool is_virtual, int idx_variant) {
   itensor_ = nullptr;
   this->is_virtual = is_virtual;
 
@@ -208,7 +208,7 @@ Tensor::Tensor(const TensorDim &d, bool alloc_now, Initializer init,
   } else if (d.getDataType() == Tdatatype::QINT4) {
 #if defined(ENABLE_FP16) && defined(__aarch64__)
     // Use optimized Kai4Tensor on ARM64 with FP16
-    itensor_ = std::make_unique<Kai4Tensor>(d, alloc_now, init, name, qscheme);
+    itensor_ = std::make_unique<Kai4Tensor>(d, alloc_now, init, name, qscheme, idx_variant);
 #else
     // Fall back to generic Int4QTensor on other platforms
     itensor_ = std::make_unique<Int4QTensor>(d, alloc_now, init, name, qscheme);

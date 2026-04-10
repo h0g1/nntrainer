@@ -32,9 +32,9 @@ if [ ! -d $ANDROID_NDK ]; then
 fi
 
 if [[ $enable_gpu -eq 1 ]]; then  
-  ndk-build -j$(nproc) MESON_ENABLE_OPENCL=1
+  ndk-build MESON_ENABLE_OPENCL=1
 else
-  ndk-build -j$(nproc)
+  ndk-build 
 fi
 
 if [ $? != 0 ]; then
