@@ -164,6 +164,24 @@ if get_option('enable-fp16')
      add_project_arguments('-mfp16-format=ieee', language: ['c', 'cpp'])
      extra_defines += '-DENABLE_FP16=1'
      extra_defines += '-DUSE__FP16=1'
+     arm_arch_opt = get_option('arm-arch')
+     if arm_arch_opt == 'armv9.2-a'
+       add_project_arguments('-march=armv9.2-a+fp16+sve2+sme+sme2', language: ['c', 'cpp'])
+       extra_defines += '-DARM_ARCH_ARMV9_2A=1'
+       extra_defines += '-DENABLE_SVE2=1'
+       extra_defines += '-D__ARM_FEATURE_SVE=1'
+       extra_defines += '-D__ARM_FEATURE_SME=1'
+       extra_defines += '-D__ARM_FEATURE_SME2=1'
+
+     elif arm_arch_opt == 'armv8.2-a'
+       add_project_arguments('-march=armv8.2-a+fp16+dotprod+i8mm', language: ['c', 'cpp'])
+       extra_defines += '-DARM_ARCH_ARMV8_2A=1'
+     else
+       # auto: default to armv8.2-a+fp16+dotprod+i8mm for native aarch64 builds
+       add_project_arguments('-march=armv8.2-a+fp16+dotprod+i8mm', language: ['c', 'cpp'])
+       extra_defines += '-DARM_ARCH_ARMV8_2A=1'
+       message('Unknown arm-arch option. Using default armv8.2-a+fp16+dotprod+i8mm')
+     endif
    elif arch == 'aarch64'
      ## About FP16 in GCC (from GCC-9.1 manual)
      # https://gcc.gnu.org/onlinedocs/gcc-9.1.0/gcc/Half-Precision.html
@@ -182,9 +200,13 @@ if get_option('enable-fp16')
      # Use arm-arch option for architecture-specific flags
      arm_arch_opt = get_option('arm-arch')
      if arm_arch_opt == 'armv9.2-a'
-       add_project_arguments('-march=armv9.2-a+fp16+sve2+sme', language: ['c', 'cpp'])
+       add_project_arguments('-march=armv9.2-a+fp16+sve2+sme+sme2', language: ['c', 'cpp'])
        extra_defines += '-DARM_ARCH_ARMV9_2A=1'
        extra_defines += '-DENABLE_SVE2=1'
+       extra_defines += 'D__ARM_FEATURE_SVE=1'
+       extra_defines += 'D__ARM_FEATURE_SME=1'
+       extra_defines += 'D__ARM_FEATURE_SME2=1'
+
      elif arm_arch_opt == 'armv8.2-a'
        add_project_arguments('-march=armv8.2-a+fp16+dotprod+i8mm', language: ['c', 'cpp'])
        extra_defines += '-DARM_ARCH_ARMV8_2A=1'
@@ -561,24 +583,21 @@ if get_option('platform') == 'windows'
     gtest_dep = declare_dependency(include_directories: gtest_include, link_args:['gtest.lib'])
     gtest_main_dep = declare_dependency(include_directories: gtest_include, link_args:['gtest_main.lib', 'gtest.lib'])
 else
-  gmock_dep = dependency('gmock', static: true, main: false, required: false)
-  gtest_dep = dependency('gtest', static: true, main: false, required: false)
-  gtest_main_dep = dependency('gtest', static: true, main: true, required: false)
-
-  if not gmock_dep.found() or not gtest_dep.found() or not gtest_main_dep.found()
-    googletest_options = cmake.subproject_options()
-    if host_machine.system() != 'windows'
-      googletest_options.add_cmake_defines({'CMAKE_POSITION_INDEPENDENT_CODE': true})
-    endif
-    googletest_options.add_cmake_defines({'BUILD_SHARED_LIBS': false})
-    googletest_subproject = cmake.subproject('googletest', options: googletest_options, required: true)
-    gmock_dep = googletest_subproject.dependency('gmock')
-    gtest_dep = googletest_subproject.dependency('gtest')
-    gtest_main_dep = [googletest_subproject.dependency('gtest_main')]
-    # meson provided dependency gtest_main_dep is sum of [gtest_dep, gtest_main_dep]
-    # This difference between cmake and meson dependency is exposed on linux
-    gtest_main_dep += gtest_dep
+  googletest_options = cmake.subproject_options()
+  
+  if host_machine.system() != 'windows'
+    googletest_options.add_cmake_defines({'CMAKE_POSITION_INDEPENDENT_CODE': true})
   endif
+
+  googletest_options.add_cmake_defines({'BUILD_SHARED_LIBS': false})
+
+  googletest_subproject = cmake.subproject('googletest', options: googletest_options, required: true)
+
+  gmock_dep = googletest_subproject.dependency('gmock')
+  gtest_dep = googletest_subproject.dependency('gtest')
+
+  gtest_main_dep = [googletest_subproject.dependency('gtest_main')]
+  gtest_main_dep += gtest_dep
 endif
 
 if get_option('enable-test') # and get_option('platform') != 'android'
@@ -783,6 +802,9 @@ if get_option('enable-app')
       endif
     endif
     subdir('Applications')
+    if get_option('enable-transformer')
+      subdir('tools')
+    endif
   endif
 endif
 

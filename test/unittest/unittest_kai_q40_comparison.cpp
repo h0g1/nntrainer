@@ -93,6 +93,37 @@ static std::vector<T> generate_random_vector(size_t size, float min_val = -1.0f,
   return vec;
 }
 
+static std::vector<std::string> get_kai_kernel_names() {
+  std::vector<std::string> names = {
+    "matmul_clamp_f32_qai8dxp1x8_qsi4cxp4x8_1x4x32_neon_dotprod",
+    "matmul_clamp_f32_qai8dxp1x8_qsi4cxp8x8_1x8x32_neon_dotprod",
+    "matmul_clamp_f32_qai8dxp4x8_qsi4cxp4x8_4x4x32_neon_i8mm",
+    "matmul_clamp_f32_qai8dxp4x8_qsi4cxp4x8_8x4x32_neon_i8mm",
+    "matmul_clamp_f32_qai8dxp4x8_qsi4cxp8x8_4x8x32_neon_i8mm",
+    "matmul_clamp_f32_qai8dxp4x8_qsi4cxp8x8_8x8x32_neon_i8mm",
+    "matmul_clamp_f32_qai8dxp4x8_qsi4cxp8x4_8x8x32_neon_dotprod",
+    "matmul_clamp_f32_qai8dxp4x8_qsi4cxp4x4_16x4x32_neon_dotprod",
+  };
+
+#ifdef __ARM_FEATURE_SME
+names.push_back("matmul_clamp_f32_qai8dxp1vlx4_qsi4cxp4vlx4_1vlx4vl_sme_mopa");
+names.push_back("matmul_clamp_f32_qai8dxp1x4_qsi4cxp4vlx4_1x4vl_sme_dot");
+#endif
+
+#ifdef __ARM_FEATURE_SME2
+names.push_back("matmul_clamp_f32_qai8dxp1vlx8_qsi4cxp4vlx8_1vlx4vl_sme2_mopa");
+names.push_back("matmul_clamp_f32_qai8dxp1x4_qsi4cxp4vlx4_1x4vl_sme2_sdot");
+#endif
+
+  return names;
+}
+
+static unsigned int get_num_kai_variants() {
+  return static_cast<unsigned int>(get_kai_kernel_names().size());
+}
+
+
+
 /**
  * @brief Compute MSE between two vectors
  */
@@ -184,6 +215,7 @@ static void test_q40_tensor_dot_api(unsigned int M, unsigned int K, unsigned int
  */
 #if defined(ENABLE_FP16) && defined(__aarch64__)
 static void test_kai_tensor_dot_api(unsigned int M, unsigned int K, unsigned int N, unsigned int idx) {
+  //ASSERT_LT(idx, get_num_kai_variants());
   // 1. Generate random FP32 data
   std::vector<float> activation_fp32 = generate_random_vector<float>(M * K);
   std::vector<float> weight_fp32 = generate_random_vector<float>(N * K);
@@ -254,7 +286,8 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
 
   const int T = 50; // T iterations
   
-  std::string uname[8] = {"matmul_clamp_f32_qai8dxp1x8_qsi4cxp4x8_1x4x32_neon_dotprod", "matmul_clamp_f32_qai8dxp1x8_qsi4cxp8x8_1x8x32_neon_dotprod", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp4x8_4x4x32_neon_i8mm", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp4x8_8x4x32_neon_i8mm", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp8x8_4x8x32_neon_i8mm", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp8x8_8x8x32_neon_i8mm", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp8x4_8x8x32_neon_dotprod", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp4x4_16x4x32_neon_dotprod"};
+  //std::string uname[8] = {"matmul_clamp_f32_qai8dxp1x8_qsi4cxp4x8_1x4x32_neon_dotprod", "matmul_clamp_f32_qai8dxp1x8_qsi4cxp8x8_1x8x32_neon_dotprod", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp4x8_4x4x32_neon_i8mm", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp4x8_8x4x32_neon_i8mm", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp8x8_4x8x32_neon_i8mm", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp8x8_8x8x32_neon_i8mm", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp8x4_8x8x32_neon_dotprod", "matmul_clamp_f32_qai8dxp4x8_qsi4cxp4x4_16x4x32_neon_dotprod"};
+  const auto kernel_names = get_kai_kernel_names();
   // 1. Generate random FP32 data 
   std::vector<float> activation_fp32 = generate_random_vector<float>(M * K * T);
   std::vector<float> weight_fp32 = generate_random_vector<float>(N * K * T);
@@ -305,11 +338,11 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
   microseconds execution_time{};
 
   
-  for (unsigned int j = 0; j < N_K; j++){
+  for (unsigned int j = 0; j < get_num_kai_variants(); j++){
     // j-th ukernel (KAI)
     idx_variant = j;
     nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE, idx_variant);
-    kai_weight_tensor.allocate();
+    kai_weight_tensor.allocate();W
 
     packed_size = nntr_kai_get_rhs_packed_size_qsi4cxp_qs4cxs1s0(N, K, idx_variant, transB);
 
@@ -347,7 +380,7 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
 
     execution_time = duration_cast<microseconds>(t1 - t0);
       
-    std::cout << "QINT4 kernel " << uname[j] << " : " << execution_time.count()/T << " ms " << std::endl;
+    std::cout << "QINT4 kernel " << kernel_names[j] << " : " << execution_time.count()/T << " ms " << std::endl;
       
     
   }
@@ -422,6 +455,25 @@ TEST(KAI_acc7, GEMM_1024x2560x1024) {
   test_kai_tensor_dot_api(1024, 2560, 1024, 7);
 }
 
+#ifdef __ARM_FEATURE_SME
+TEST(KAI_acc8, GEMM_1024x2560x1024) {
+  test_kai_tensor_dot_api(1024, 2560, 1024, 8);
+}
+
+TEST(KAI_acc9, GEMM_1024x2560x1024) {
+  test_kai_tensor_dot_api(1024, 2560, 1024, 9);
+}
+#endif
+
+#ifdef __ARM_FEATURE_SME2
+TEST(KAI_acc10, GEMM_1024x2560x1024) {
+  test_kai_tensor_dot_api(1024, 2560, 1024, 10);
+}
+
+TEST(KAI_acc11, GEMM_1024x2560x1024) {
+  test_kai_tensor_dot_api(1024, 2560, 1024, 11);
+}
+#endif
 
 
 
@@ -462,6 +514,26 @@ TEST(KAI_acc72, GEMM_1x2560x1024) {
   test_kai_tensor_dot_api(1, 2560, 1024, 7);
 }
 
+#ifdef __ARM_FEATURE_SME
+TEST(KAI_acc82, GEMV_1x2560x1024) {
+  test_kai_tensor_dot_api(1, 2560, 1024, 8);
+}
+
+TEST(KAI_acc92, GEMV_1x2560x1024) {
+  test_kai_tensor_dot_api(1, 2560, 1024, 9);
+}
+#endif
+
+#ifdef __ARM_FEATURE_SME2
+TEST(KAI_acc102, GEMV_1x2560x1024) {
+  test_kai_tensor_dot_api(1, 2560, 1024, 10);
+}
+
+TEST(KAI_acc112, GEMV_1x2560x1024) {
+  test_kai_tensor_dot_api(1, 2560, 1024, 11);
+}
+#endif
+
 
 
 
@@ -501,6 +573,26 @@ TEST(KAI_acc73, GEMM_1024x2560x4096) {
   test_kai_tensor_dot_api(1024, 2560, 4096, 7);
 }
 
+#ifdef __ARM_FEATURE_SME
+TEST(KAI_acc83, GEMM_1024x2560x4096) {
+  test_kai_tensor_dot_api(1024, 2560, 4096, 8);
+}
+
+TEST(KAI_acc93, GEMM_1024x2560x4096) {
+  test_kai_tensor_dot_api(1024, 2560, 4096, 9);
+}
+#endif
+
+#ifdef __ARM_FEATURE_SME2
+TEST(KAI_acc103, GEMM_1024x2560x4096) {
+  test_kai_tensor_dot_api(1024, 2560, 4096, 10);
+}
+
+TEST(KAI_acc113, GEMM_1024x2560x4096) {
+  test_kai_tensor_dot_api(1024, 2560, 4096, 11);
+}
+#endif
+
 
 
 TEST(Q40_acc4, GEMV_1x2560x4096) {
@@ -539,7 +631,25 @@ TEST(KAI_acc74, GEMV_1x2560x4096) {
   test_kai_tensor_dot_api(1, 2560, 4096, 7);
 }
 
+#ifdef __ARM_FEATURE_SME
+TEST(KAI_acc84, GEMV_1x2560x4096) {
+  test_kai_tensor_dot_api(1, 2560, 4096, 8);
+}
 
+TEST(KAI_acc94, GEMV_1x2560x4096) {
+  test_kai_tensor_dot_api(1, 2560, 4096, 9);
+}
+#endif
+
+#ifdef __ARM_FEATURE_SME2
+TEST(KAI_acc104, GEMV_1x2560x4096) {
+  test_kai_tensor_dot_api(1, 2560, 4096, 10);
+}
+
+TEST(KAI_acc114, GEMV_1x2560x4096) {
+  test_kai_tensor_dot_api(1, 2560, 4096, 11);
+}
+#endif
 
 
 TEST(Q40_acc5, GEMM_1024x2560x9728) {
@@ -578,6 +688,25 @@ TEST(KAI_acc75, GEMM_1024x2560x9728) {
   test_kai_tensor_dot_api(1024, 2560, 9728, 7);
 }
 
+#ifdef __ARM_FEATURE_SME
+TEST(KAI_acc85, GEMM_1024x2560x9728) {
+  test_kai_tensor_dot_api(1024, 2560, 9728, 8);
+}
+
+TEST(KAI_acc95, GEMM_1024x2560x9728) {
+  test_kai_tensor_dot_api(1024, 2560, 9728, 9);
+}
+#endif
+
+#ifdef __ARM_FEATURE_SME2
+TEST(KAI_acc105, GEMM_1024x2560x9728) {
+  test_kai_tensor_dot_api(1024, 2560, 9728, 10);
+}
+
+TEST(KAI_acc115, GEMM_1024x2560x9728) {
+  test_kai_tensor_dot_api(1024, 2560, 9728, 11);
+}
+#endif
 
 
 
@@ -617,7 +746,25 @@ TEST(KAI_acc76, GEMV_1x2560x9728) {
   test_kai_tensor_dot_api(1, 2560, 9728, 7);
 }
 
+#ifdef __ARM_FEATURE_SME
+TEST(KAI_acc86, GEMV_1x2560x9728) {
+  test_kai_tensor_dot_api(1, 2560, 9728, 8);
+}
 
+TEST(KAI_acc96, GEMV_1x2560x9728) {
+  test_kai_tensor_dot_api(1, 2560, 9728, 9);
+}
+#endif
+
+#ifdef __ARM_FEATURE_SME2
+TEST(KAI_acc106, GEMV_1x2560x9728) {
+  test_kai_tensor_dot_api(1, 2560, 9728, 10);
+}
+
+TEST(KAI_acc116, GEMV_1x2560x9728) {
+  test_kai_tensor_dot_api(1, 2560, 9728, 11);
+}
+#endif
 
 TEST(Q40_acc7, GEMM_1024x4096x2560) {
   test_q40_tensor_dot_api(1024, 4096, 2560);
@@ -655,7 +802,25 @@ TEST(KAI_acc77, GEMM_1024x4096x2560) {
   test_kai_tensor_dot_api(1024, 4096, 2560, 7);
 }
 
+#ifdef __ARM_FEATURE_SME
+TEST(KAI_acc87, GEMM_1024x4096x2560) {
+  test_kai_tensor_dot_api(1024, 4096, 2560, 8);
+}
 
+TEST(KAI_acc97, GEMM_1024x4096x2560) {
+  test_kai_tensor_dot_api(1024, 4096, 2560, 9);
+}
+#endif
+
+#ifdef __ARM_FEATURE_SME2
+TEST(KAI_acc107, GEMM_1024x4096x2560) {
+  test_kai_tensor_dot_api(1024, 4096, 2560, 10);
+}
+
+TEST(KAI_acc117, GEMM_1024x4096x2560) {
+  test_kai_tensor_dot_api(1024, 4096, 2560, 11);
+}
+#endif
 
 
 TEST(Q40_acc8, GEMV_1x4096x2560) {
@@ -694,7 +859,25 @@ TEST(KAI_acc78, GEMV_1x4096x2560) {
   test_kai_tensor_dot_api(1, 4096, 2560, 7);
 }
 
+#ifdef __ARM_FEATURE_SME
+TEST(KAI_acc88, GEMV_1x4096x2560) {
+  test_kai_tensor_dot_api(1, 4096, 2560, 8);
+}
 
+TEST(KAI_acc98, GEMV_1x4096x2560) {
+  test_kai_tensor_dot_api(1, 4096, 2560, 9);
+}
+#endif
+
+#ifdef __ARM_FEATURE_SME2
+TEST(KAI_acc108, GEMV_1x4096x2560) {
+  test_kai_tensor_dot_api(1, 4096, 2560, 10);
+}
+
+TEST(KAI_acc118, GEMV_1x4096x2560) {
+  test_kai_tensor_dot_api(1, 4096, 2560, 11);
+}
+#endif
 
 
 TEST(Q40_acc9, GEMM_1024x9728x2560) {
@@ -733,7 +916,25 @@ TEST(KAI_acc79, GEMM_1024x9728x2560) {
   test_kai_tensor_dot_api(1024, 9728, 2560, 7);
 }
 
+#ifdef __ARM_FEATURE_SME
+TEST(KAI_acc89, GEMM_1024x9728x2560) {
+  test_kai_tensor_dot_api(1024, 9728, 2560, 8);
+}
 
+TEST(KAI_acc99, GEMM_1024x9728x2560) {
+  test_kai_tensor_dot_api(1024, 9728, 2560, 9);
+}
+#endif
+
+#ifdef __ARM_FEATURE_SME2
+TEST(KAI_acc109, GEMM_1024x9728x2560) {
+  test_kai_tensor_dot_api(1024, 9728, 2560, 10);
+}
+
+TEST(KAI_acc119, GEMM_1024x9728x2560) {
+  test_kai_tensor_dot_api(1024, 9728, 2560, 11);
+}
+#endif
 
 
 
@@ -773,7 +974,25 @@ TEST(KAI_acc710, GEMV_1x9728x2560) {
   test_kai_tensor_dot_api(1, 9728, 2560, 7);
 }
 
+#ifdef __ARM_FEATURE_SME
+TEST(KAI_acc810, GEMV_1x9728x2560) {
+  test_kai_tensor_dot_api(1, 9728, 2560, 8);
+}
 
+TEST(KAI_acc910, GEMV_1x9728x2560) {
+  test_kai_tensor_dot_api(1, 9728, 2560, 9);
+}
+#endif
+
+#ifdef __ARM_FEATURE_SME2
+TEST(KAI_acc1010, GEMV_1x9728x2560) {
+  test_kai_tensor_dot_api(1, 9728, 2560, 10);
+}
+
+TEST(KAI_acc1110, GEMV_1x9728x2560) {
+  test_kai_tensor_dot_api(1, 9728, 2560, 11);
+}
+#endif
 
 
 
