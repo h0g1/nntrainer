@@ -203,9 +203,9 @@ if get_option('enable-fp16')
        add_project_arguments('-march=armv9.2-a+fp16+sve2+sme+sme2', language: ['c', 'cpp'])
        extra_defines += '-DARM_ARCH_ARMV9_2A=1'
        extra_defines += '-DENABLE_SVE2=1'
-       extra_defines += 'D__ARM_FEATURE_SVE=1'
-       extra_defines += 'D__ARM_FEATURE_SME=1'
-       extra_defines += 'D__ARM_FEATURE_SME2=1'
+       extra_defines += '-D__ARM_FEATURE_SVE=1'
+       extra_defines += '-D__ARM_FEATURE_SME=1'
+       extra_defines += '-D__ARM_FEATURE_SME2=1'
 
      elif arm_arch_opt == 'armv8.2-a'
        add_project_arguments('-march=armv8.2-a+fp16+dotprod+i8mm', language: ['c', 'cpp'])
