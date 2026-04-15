@@ -1926,6 +1926,12 @@ public:
    */
   uint32_t getKernelVariant() const;
 
+    /**
+   * @brief     return kernel variant index
+   * @retval    kernel variant index
+   */
+  void setKernelVariant(uint32_t idx) const;
+
   /**
    * @brief     return Tensor quantization scheme
    * @retval    Qscheme qscheme

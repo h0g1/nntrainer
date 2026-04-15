@@ -114,7 +114,6 @@ static void print_macro_status() {
 }
 
 static std::vector<std::string> get_kai_kernel_names() {
-  print_macro_status();
   std::vector<std::string> names = {
     "matmul_clamp_f32_qai8dxp1x8_qsi4cxp4x8_1x4x32_neon_dotprod",
     "matmul_clamp_f32_qai8dxp1x8_qsi4cxp8x8_1x8x32_neon_dotprod",
@@ -367,6 +366,7 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
     // j-th ukernel (KAI)
     idx_variant = j;
     nntrainer::Tensor kai_weight_tensor(kai_dim, false, nntrainer::Initializer::NONE, "", nntrainer::QScheme::PER_CHANNEL_AFFINE, false, idx_variant);
+    kai_weight_tensor.setKernelVariant(idx_variant);
     kai_weight_tensor.allocate();
 
     packed_size = nntr_kai_get_rhs_packed_size_qsi4cxp_qs4cxs1s0(N, K, idx_variant, transB);
@@ -445,7 +445,7 @@ static void test_q40_vs_kai(unsigned int M, unsigned int K, unsigned int N) {
 
 #if defined(ENABLE_FP16) && defined(__aarch64__)
 
-#if defined(NORMAL)
+#ifndef NORMAL
 TEST(Q40_acc, GEMM_1024x2560x1024) {
   test_q40_tensor_dot_api(1024, 2560, 1024);
 }

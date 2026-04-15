@@ -57,7 +57,7 @@ public:
    * @brief Construct a new Kai4Tensor object
    * @param rhs TensorBase object to copy
    */
-  Kai4Tensor(TensorBase &rhs) : TensorBase(rhs) {}
+  Kai4Tensor(TensorBase &rhs) : TensorBase(rhs) {_idx_variant = 3;}
 
   /**
    * @copydoc Tensor::allocate()

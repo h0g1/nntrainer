@@ -601,6 +601,18 @@ uint32_t Tensor::getKernelVariant() const {
   return 4;  // Default variant
 }
 
+void Tensor::setKernelVariant(uint32_t idx) const {
+#if defined(ENABLE_FP16) && defined(__aarch64__)
+  // Check if underlying tensor is Kai4Tensor
+  if (getDataType() == Tdatatype::QINT4) {
+    auto* kai_tensor = dynamic_cast<Kai4Tensor*>(itensor_.get());
+    if (kai_tensor != nullptr) {
+      return kai_tensor->setKernelVariant(idx);
+    }
+  }
+#endif
+}
+
 int Tensor::divide_i(float const &value) {
   if (value == 0.0f) {
     return ML_ERROR_INVALID_PARAMETER;
