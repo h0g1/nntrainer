@@ -209,6 +209,68 @@ TEST(ActivationNeon, SwiGluv2Accuracy) {
   }
 }
 
+TEST(ActivationNeon, SwiGluSVEAccuracy) {
+  constexpr size_t N = 4096;
+
+  std::mt19937 rng(456);
+  // Input Range
+  std::uniform_real_distribution<float> dist_y(-10.0f, 10.0f);
+  std::uniform_real_distribution<float> dist_z(-10.0f, 10.0f);
+
+  std::vector<float> x(N), y(N), z(N), x_ref(N);
+
+  for (size_t i = 0; i < N; ++i) {
+    y[i] = dist_y(rng);
+    z[i] = dist_z(rng);
+  }
+
+  const float alpha = 1.0f; // Parametrize it if necessary
+  nntrainer::swiglu_sve(static_cast<unsigned int>(N), x.data(), y.data(), z.data()); // 4
+
+  for (size_t i = 0; i < N; ++i)
+    x_ref[i] = ref_swiglu(y[i], z[i], 1.0);
+
+  // Tolerance
+  const float abs_tol = 1e-5f;
+  const float rel_tol = 1e-5f;
+
+  // Test for each case
+  for (size_t i = 0; i < N; ++i) {
+    expect_close(x[i], x_ref[i], abs_tol, rel_tol);
+  }
+}
+
+TEST(ActivationNeon, SwiGluv3SVEAccuracy) {
+  constexpr size_t N = 4096;
+
+  std::mt19937 rng(456);
+  // Input Range
+  std::uniform_real_distribution<float> dist_y(-3.0f, 3.0f);
+  std::uniform_real_distribution<float> dist_z(-3.0f, 3.0f);
+
+  std::vector<float> x(N), y(N), z(N), x_ref(N);
+
+  for (size_t i = 0; i < N; ++i) {
+    y[i] = dist_y(rng);
+    z[i] = dist_z(rng);
+  }
+
+  const float alpha = 1.0f; // Parametrize it if necessary
+  nntrainer::swiglu_v3_sve(static_cast<unsigned int>(N), x.data(), y.data(), z.data()); // 4
+
+  for (size_t i = 0; i < N; ++i)
+    x_ref[i] = ref_swiglu(y[i], z[i], 1.0);
+
+  // Tolerance
+  const float abs_tol = 1e-5f;
+  const float rel_tol = 1e-5f;
+
+  // Test for each case
+  for (size_t i = 0; i < N; ++i) {
+    expect_close(x[i], x_ref[i], abs_tol, rel_tol);
+  }
+}
+
 TEST(ActivationNeon, TanhGeluMulAccuracy) {
   constexpr size_t N = 4096;
 
@@ -245,8 +307,8 @@ TEST(ActivationNeonPerf, TanhGeluVsSwiGluTime) {
   constexpr int iters = 1000;
 
   std::mt19937 rng(789);
-  std::uniform_real_distribution<float> dist(-5.0f, 5.0f);
-  std::uniform_real_distribution<float> distz(-5.0f, 5.0f);
+  std::uniform_real_distribution<float> dist(-3.0f, 3.0f);
+  std::uniform_real_distribution<float> distz(-3.0f, 3.0f);
 
   std::vector<float> x(N * iters), y(N * iters), z(N * iters), r(N * iters),
     out(N * iters);
@@ -320,6 +382,15 @@ TEST(ActivationNeonPerf, TanhGeluVsSwiGluTime) {
 
   bench("swigluv2(alpha=1)", [&]() {
     nntrainer::swiglu_v3(static_cast<unsigned int>(N), pout, py, pz
+                      ); // 6
+  });
+
+  bench("swiglu_sve(alpha=1)", [&]() {
+    nntrainer::swiglu_sve(static_cast<unsigned int>(N), pout, py, pz); // 6
+  });
+
+  bench("swigluv2_sve(alpha=1)", [&]() {
+    nntrainer::swiglu_v3_sve(static_cast<unsigned int>(N), pout, py, pz
                       ); // 6
   });
 

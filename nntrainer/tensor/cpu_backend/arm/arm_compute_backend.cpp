@@ -43,11 +43,19 @@ void calc_trigonometric_vals_dup(unsigned int N_half, float *angle, float *cos_,
 }
 
 void swiglu(const unsigned int N, float *X, float *Y, float *Z) {
-  nntrainer::neon::swiglu(N, X, Y, Z);
+  nntrainer::neon::swiglu(N, X, Y, Z, 1.0);
 }
 
 void swiglu_v3(const unsigned int N, float *X, float *Y, float *Z) {
   nntrainer::neon::swiglu_v3(N, X, Y, Z);
+}
+
+void swiglu_sve(const unsigned int N, float *X, float *Y, float *Z) {
+  nntrainer::neon::swiglu_sve(N, X, Y, Z);
+}
+
+void swiglu_v3_sve(const unsigned int N, float *X, float *Y, float *Z) {
+  nntrainer::neon::swiglu_v3_sve(N, X, Y, Z);
 }
 
 void swiglu(const unsigned int N, float *X, float *Y, float *Z, float alpha) {

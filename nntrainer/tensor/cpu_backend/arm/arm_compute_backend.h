@@ -791,6 +791,26 @@ void swiglu(const unsigned int N, float *X, float *Y, float *Z);
 void swiglu_v3(const unsigned int N, float *X, float *Y, float *Z);
 
 /**
+ * @brief swiglu function with neon : X = (Y / (1 + exp( -Y ))) * Z
+ *
+ * @param N number of elements in X
+ * @param X float * for Vector X
+ * @param Y float * for Vector Y
+ * @param Z float * for Vector Z
+ */
+void swiglu_sve(const unsigned int N, float *X, float *Y, float *Z);
+
+/**
+ * @brief swiglu function with neon : X = (Y / (1 + exp( -Y ))) * Z
+ *
+ * @param N number of elements in X
+ * @param X float * for Vector X
+ * @param Y float * for Vector Y
+ * @param Z float * for Vector Z
+ */
+void swiglu_v3_sve(const unsigned int N, float *X, float *Y, float *Z);
+
+/**
  * @brief swiglu function with alpha and neon
  *  X = (Y / (1 + exp(- alpha * Y)))
  *        * Z with loop unrolling x4
