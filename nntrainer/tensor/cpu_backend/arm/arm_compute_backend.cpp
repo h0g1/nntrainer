@@ -46,6 +46,10 @@ void swiglu(const unsigned int N, float *X, float *Y, float *Z) {
   nntrainer::neon::swiglu(N, X, Y, Z);
 }
 
+void swiglu_v3(const unsigned int N, float *X, float *Y, float *Z) {
+  nntrainer::neon::swiglu_v3(N, X, Y, Z);
+}
+
 void swiglu(const unsigned int N, float *X, float *Y, float *Z, float alpha) {
   nntrainer::neon::swiglu(N, X, Y, Z, alpha);
 }

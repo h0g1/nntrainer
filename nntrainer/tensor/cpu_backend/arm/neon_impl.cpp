@@ -923,6 +923,109 @@ void calc_trigonometric_vals_dup(unsigned int N_half, float *angle, float *cos_,
   }
 }
 
+
+#define c_swiglu_p0   8.22364121e-06f
+#define c_swiglu_p1   5.00000050e-01f
+#define c_swiglu_p2   2.49900548e-01f
+#define c_swiglu_p4  -2.06351595e-02f
+#define c_swiglu_p6   1.93099489e-03f
+#define c_swiglu_p8  -1.51606402e-04f
+#define c_swiglu_p10  7.98275954e-06f
+#define c_swiglu_p12 -1.96315986e-07f
+
+static inline float32x4_t swiglu_poly_neon(float32x4_t x) {
+  float32x4_t x2 = vmulq_f32(x, x);
+
+  float32x4_t y = vmulq_f32(x2, vdupq_n_f32(c_swiglu_p12));
+  y = vaddq_f32(y, vdupq_n_f32(c_swiglu_p10));
+  y = vmulq_f32(x2, y);
+  y = vaddq_f32(y, vdupq_n_f32(c_swiglu_p8));
+  y = vmulq_f32(x2, y);
+  y = vaddq_f32(y, vdupq_n_f32(c_swiglu_p6));
+  y = vmulq_f32(x2, y);
+  y = vaddq_f32(y, vdupq_n_f32(c_swiglu_p4));
+  y = vmulq_f32(x2, y);
+  y = vaddq_f32(y, vdupq_n_f32(c_swiglu_p2));
+  y = vmulq_f32(x2, y);
+
+  float32x4_t z = vmulq_f32(x, vdupq_n_f32(c_swiglu_p1));
+  z = vaddq_f32(z, vdupq_n_f32(c_swiglu_p0));
+
+  return vaddq_f32(y, z);
+}
+
+void swiglu_v3(const unsigned int N, float *X, float *Y, float *Z) {
+  unsigned int i = 0;
+
+  for (; N - i >= 16; i += 16) {
+    float32x4_t y0 = vld1q_f32(&Y[i]);
+    float32x4_t y1 = vld1q_f32(&Y[i + 4]);
+    float32x4_t y2 = vld1q_f32(&Y[i + 8]);
+    float32x4_t y3 = vld1q_f32(&Y[i + 12]);
+
+    float32x4_t z0 = vld1q_f32(&Z[i]);
+    float32x4_t z1 = vld1q_f32(&Z[i + 4]);
+    float32x4_t z2 = vld1q_f32(&Z[i + 8]);
+    float32x4_t z3 = vld1q_f32(&Z[i + 12]);
+
+    float32x4_t s0 = swiglu_poly_neon(y0);
+    float32x4_t s1 = swiglu_poly_neon(y1);
+    float32x4_t s2 = swiglu_poly_neon(y2);
+    float32x4_t s3 = swiglu_poly_neon(y3);
+
+    vst1q_f32(&X[i],      vmulq_f32(s0, z0));
+    vst1q_f32(&X[i + 4],  vmulq_f32(s1, z1));
+    vst1q_f32(&X[i + 8],  vmulq_f32(s2, z2));
+    vst1q_f32(&X[i + 12], vmulq_f32(s3, z3));
+  }
+
+  for (; N - i >= 8; i += 8) {
+    float32x4_t y0 = vld1q_f32(&Y[i]);
+    float32x4_t y1 = vld1q_f32(&Y[i + 4]);
+
+    float32x4_t z0 = vld1q_f32(&Z[i]);
+    float32x4_t z1 = vld1q_f32(&Z[i + 4]);
+
+    float32x4_t s0 = swiglu_poly_neon(y0);
+    float32x4_t s1 = swiglu_poly_neon(y1);
+
+    vst1q_f32(&X[i],      vmulq_f32(s0, z0));
+    vst1q_f32(&X[i + 4],  vmulq_f32(s1, z1));
+  }
+
+  for (; N - i >= 4; i += 4) {
+    float32x4_t y0 = vld1q_f32(&Y[i]);
+    float32x4_t z0 = vld1q_f32(&Z[i]);
+    float32x4_t s0 = swiglu_poly_neon(y0);
+    vst1q_f32(&X[i], vmulq_f32(s0, z0));
+  }
+
+  while (i < N) {
+    float x = Y[i];
+    float x2 = x * x;
+    float s = c_swiglu_p0
+            + x * c_swiglu_p1
+            + x2 * (c_swiglu_p2
+            + x2 * (c_swiglu_p4
+            + x2 * (c_swiglu_p6
+            + x2 * (c_swiglu_p8
+            + x2 * (c_swiglu_p10
+            + x2 * c_swiglu_p12)))));
+    X[i] = s * Z[i];
+    ++i;
+  }
+}
+
+#undef c_swiglu_p0
+#undef c_swiglu_p1
+#undef c_swiglu_p2
+#undef c_swiglu_p4
+#undef c_swiglu_p6
+#undef c_swiglu_p8
+#undef c_swiglu_p10
+#undef c_swiglu_p12
+
+
 void swiglu(const unsigned int N, float *X, float *Y, float *Z) {
   unsigned int i = 0;
   float32x4_t neg_alpha_vec = vdupq_n_f32(-1.0f);
@@ -1192,6 +1295,8 @@ void swiglu(const unsigned int N, float *X, float *Y, float *Z, float alpha) {
     ++i;
   }
 }
+
+
 
 void tanh_gelu(const unsigned int N, const float *X, float *Y) {
   unsigned int i = 0;

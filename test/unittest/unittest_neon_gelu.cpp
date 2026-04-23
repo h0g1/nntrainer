@@ -19,6 +19,9 @@
 #include <iostream>
 #include <random>
 #include <vector>
+#ifdef ENABLE_SVE
+#include <arm_sve.h>
+#endif
 
 #include <cpu_backend.h> // tanh_gelu, swiglu
 
@@ -175,6 +178,37 @@ TEST(ActivationNeon, SwiGluAccuracy) {
   }
 }
 
+TEST(ActivationNeon, SwiGluv2Accuracy) {
+  constexpr size_t N = 4096;
+
+  std::mt19937 rng(456);
+  // Input Range
+  std::uniform_real_distribution<float> dist_y(-3.0f, 3.0f);
+  std::uniform_real_distribution<float> dist_z(-3.0f, 3.0f);
+
+  std::vector<float> x(N), y(N), z(N), x_ref(N);
+
+  for (size_t i = 0; i < N; ++i) {
+    y[i] = dist_y(rng);
+    z[i] = dist_z(rng);
+  }
+
+  const float alpha = 1.0f; // Parametrize it if necessary
+  nntrainer::swiglu_v3(static_cast<unsigned int>(N), x.data(), y.data(), z.data()); // 4
+
+  for (size_t i = 0; i < N; ++i)
+    x_ref[i] = ref_swiglu(y[i], z[i], 1.0);
+
+  // Tolerance
+  const float abs_tol = 1e-5f;
+  const float rel_tol = 1e-5f;
+
+  // Test for each case
+  for (size_t i = 0; i < N; ++i) {
+    expect_close(x[i], x_ref[i], abs_tol, rel_tol);
+  }
+}
+
 TEST(ActivationNeon, TanhGeluMulAccuracy) {
   constexpr size_t N = 4096;
 
@@ -282,6 +316,11 @@ TEST(ActivationNeonPerf, TanhGeluVsSwiGluTime) {
   bench("swiglu(alpha=1)", [&]() {
     nntrainer::swiglu(static_cast<unsigned int>(N), pout, py, pz,
                       alpha); // 6
+  });
+
+  bench("swigluv2(alpha=1)", [&]() {
+    nntrainer::swiglu_v3(static_cast<unsigned int>(N), pout, py, pz
+                      ); // 6
   });
 
   bench("tanh_gelu", [&]() {

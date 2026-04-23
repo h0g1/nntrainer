@@ -668,6 +668,16 @@ extern void calc_trigonometric_vals_dup(unsigned int N_half, T *angle, T *cos_,
 extern void swiglu(const unsigned int N, float *X, float *Y, float *Z);
 
 /**
+ * @brief swiglu function with neon : X = (Y / (1 + exp( -Y ))) * Z
+ *
+ * @param N number of elements in X
+ * @param X float * for Vector X
+ * @param Y float * for Vector Y
+ * @param Z float * for Vector Z
+ */
+extern void swiglu_v3(const unsigned int N, float *X, float *Y, float *Z);
+
+/**
  * @brief swiglu function with alpha : X = (Y / (1 + exp(- alpha * Y))) * Z
  * @param N number of elements in X
  * @param X float* for Vector X
