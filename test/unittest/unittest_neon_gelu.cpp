@@ -271,6 +271,34 @@ TEST(ActivationNeon, SwiGluv3SVEAccuracy) {
   }
 }
 
+
+TEST(ActivationNeon, GeluAccuracy) {
+  constexpr size_t N = 4096;
+
+  std::mt19937 rng(123);
+  std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+
+  std::vector<float> x(N), y(N), y_ref(N);
+  for (size_t i = 0; i < N; ++i)
+    x[i] = dist(rng);
+
+  nntrainer::gelu(static_cast<unsigned int>(N), x.data(), y.data());
+
+  // Reference
+  for (size_t i = 0; i < N; ++i)
+    y_ref[i] = ref_gelu(x[i]);
+
+  // Tolerance, use abs_tol only now
+  const float abs_tol = 1e-5f;
+  const float rel_tol = 1e-5f;
+
+  // Test for each case
+  for (size_t i = 0; i < N; ++i) {
+    expect_close(y[i], y_ref[i], abs_tol, rel_tol);
+  }
+}
+
+
 TEST(ActivationNeon, TanhGeluMulAccuracy) {
   constexpr size_t N = 4096;
 
@@ -304,7 +332,7 @@ TEST(ActivationNeon, TanhGeluMulAccuracy) {
 
 TEST(ActivationNeonPerf, TanhGeluVsSwiGluTime) {
   constexpr size_t N = 8192;
-  constexpr int iters = 1000;
+  constexpr int iters = 3000;
 
   std::mt19937 rng(789);
   std::uniform_real_distribution<float> dist(-3.0f, 3.0f);
@@ -374,7 +402,13 @@ TEST(ActivationNeonPerf, TanhGeluVsSwiGluTime) {
   };
 
   const float alpha = 1.0f;
-
+  bench("gelu_v2", [&]() {
+    nntrainer::gelu_v2(static_cast<unsigned int>(N), px, pout); // 5
+  });
+  bench("gelu", [&]() {
+    nntrainer::gelu(static_cast<unsigned int>(N), px, pout); // 5
+  });
+ 
   bench("swiglu(alpha=1)", [&]() {
     nntrainer::swiglu(static_cast<unsigned int>(N), pout, py, pz,
                       alpha); // 6
@@ -384,6 +418,7 @@ TEST(ActivationNeonPerf, TanhGeluVsSwiGluTime) {
     nntrainer::swiglu_v3(static_cast<unsigned int>(N), pout, py, pz
                       ); // 6
   });
+
 
   bench("swiglu_sve(alpha=1)", [&]() {
     nntrainer::swiglu_sve(static_cast<unsigned int>(N), pout, py, pz); // 6
@@ -402,9 +437,9 @@ TEST(ActivationNeonPerf, TanhGeluVsSwiGluTime) {
     nntrainer::tanh_gelu_v2(static_cast<unsigned int>(N), px, pout); // 5
   });
 
-  bench("gelu_v2", [&]() {
-    nntrainer::gelu_v2(static_cast<unsigned int>(N), px, pout); // 5
-  });
+ 
+
+
 }
 
 int main(int argc, char **argv) {
