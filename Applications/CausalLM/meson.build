@@ -33,6 +33,7 @@ causallm_layer_dependencies += [
     causallm_embedding_normalize_layer_dep,
     causallm_deberta_attention_layer_dep,
     causallm_shared_fully_connected_layer_dep,
+    causallm_causal_conv1d_dep,
 ]
 
 subdir('models')

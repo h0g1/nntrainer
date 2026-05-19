@@ -16,6 +16,7 @@
 #include <engine.h>
 #include <model.h>
 
+#include <causal_conv1d_layer.h>
 #include <llm_util.hpp>
 #include <tokenizers_cpp.h>
 #include <transformer.h>
@@ -497,6 +498,8 @@ void Transformer::registerCustomLayers() {
       nntrainer::createLayer<causallm::TieWordEmbedding>);
     app_context->registerFactory(
       nntrainer::createLayer<causallm::EmbeddingLayer>);
+    app_context->registerFactory(
+      nntrainer::createLayer<causallm::CausalConv1DLayer>);
 
   } catch (std::invalid_argument &e) {
     std::cerr << "failed to register factory, reason: " << e.what()
