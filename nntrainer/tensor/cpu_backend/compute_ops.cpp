@@ -225,6 +225,14 @@ void ComputeOps::clamp_fp32(const float *, float *, size_t, float, float) {
   NI(clamp_fp32);
 }
 
+void ComputeOps::causal_depthwise_conv1d_k3_fp16(const float *,
+                                                 const uint16_t *, float *,
+                                                 unsigned int, unsigned int,
+                                                 unsigned int, unsigned int,
+                                                 unsigned int) {
+  NI(causal_depthwise_conv1d_k3_fp16);
+}
+
 void ComputeOps::scopy_int8_to_fp32_u(unsigned int, const uint8_t *,
                                       unsigned int, float *, unsigned int) {
   NI(scopy_int8_to_fp32_u);

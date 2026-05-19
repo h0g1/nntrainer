@@ -1374,6 +1374,25 @@ extern void softmax_row(_FP16 *qk_out, size_t start_row, size_t end_row,
 #endif
 
 /**
+ * @brief Causal depthwise Conv1D with FP32 input/output and FP16 weights.
+ *
+ * @param input input tensor in BxHxW row-major layout
+ * @param packed_weight three FP16 kernel rows stored as uint16_t values
+ * @param output output tensor in BxHxW row-major layout
+ * @param batch batch size
+ * @param height sequence length
+ * @param width channel width
+ * @param from first time row to compute, inclusive
+ * @param to last time row to compute, exclusive
+ */
+extern void causal_depthwise_conv1d_k3_fp16(const float *input,
+                                            const uint16_t *packed_weight,
+                                            float *output, unsigned int batch,
+                                            unsigned int height,
+                                            unsigned int width,
+                                            unsigned int from, unsigned int to);
+
+/**
  * @brief Compute vcache for one row transposed
  * @param[in] row_num row number
  * @param[in] in float* input vector

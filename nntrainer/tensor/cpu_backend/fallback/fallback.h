@@ -1392,6 +1392,15 @@ template <typename T = float>
 void clamp(const T *input, T *output, size_t length,
            T lower_bound = std::numeric_limits<T>::lowest(),
            T upper_bound = std::numeric_limits<T>::max());
+
+/**
+ * @copydoc causal_depthwise_conv1d_k3_fp16 in cpu_backend.h
+ */
+void causal_depthwise_conv1d_k3_fp16(const float *input,
+                                     const uint16_t *packed_weight,
+                                     float *output, unsigned int batch,
+                                     unsigned int height, unsigned int width,
+                                     unsigned int from, unsigned int to);
 } /* namespace nntrainer */
 
 /**

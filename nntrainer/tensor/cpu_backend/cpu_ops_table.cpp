@@ -201,6 +201,16 @@ public:
     nntrainer::clamp(in, out, len, lb, ub);
   }
 
+  void causal_depthwise_conv1d_k3_fp16(const float *input,
+                                       const uint16_t *packed_weight,
+                                       float *output, unsigned int batch,
+                                       unsigned int height, unsigned int width,
+                                       unsigned int from,
+                                       unsigned int to) override {
+    nntrainer::causal_depthwise_conv1d_k3_fp16(input, packed_weight, output,
+                                               batch, height, width, from, to);
+  }
+
   void scopy_int8_to_fp32_u(unsigned int N, const uint8_t *X, unsigned int iX,
                             float *Y, unsigned int iY) override {
     nntrainer::scopy_int8_to_float32(N, X, iX, Y, iY);

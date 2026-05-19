@@ -99,8 +99,8 @@ namespace {
 
 template <typename To_, typename From_>
 constexpr inline bool concept17_BinaryCastable =
-  sizeof(To_) == sizeof(From_) &&
-  std::is_trivially_copyable_v<From_> &&std::is_trivially_copyable_v<To_>;
+  sizeof(To_) == sizeof(From_) && std::is_trivially_copyable_v<From_> &&
+  std::is_trivially_copyable_v<To_>;
 
 template <class To_, class From_>
 auto compat_bit_cast(const From_ &src) noexcept
@@ -1224,6 +1224,163 @@ void ele_add(const unsigned int N, const float *X, const float *Y, float *Z,
       X += o_stride;
       Y += i_stride;
       Z += o_stride;
+    }
+  }
+}
+
+void causal_depthwise_conv1d_k3_fp16(const float *input,
+                                     const uint16_t *packed_weight,
+                                     float *output, unsigned int B,
+                                     unsigned int H, unsigned int W,
+                                     unsigned int from, unsigned int to) {
+  const uint16_t *w0 = packed_weight;
+  const uint16_t *w1 = packed_weight + W;
+  const uint16_t *w2 = packed_weight + 2 * W;
+
+  constexpr unsigned int VEC = 8;
+  constexpr unsigned int TILE = 32;
+
+  auto load_fp16x8_to_fp32 = [](const uint16_t *src) -> __m256 {
+    const __m128i h = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
+    return _mm256_cvtph_ps(h);
+  };
+
+  auto fp16_to_fp32_scalar = [](uint16_t h) -> float {
+    return nntrainer::compute_fp16_to_fp32(h);
+  };
+
+  for (unsigned int b = 0; b < B; ++b) {
+    const float *x_base = input + static_cast<size_t>(b) * H * W;
+    float *y_base = output + static_cast<size_t>(b) * H * W;
+
+    unsigned int c = 0;
+
+    for (; c + TILE <= W; c += TILE) {
+      const __m256 vw0_0 = load_fp16x8_to_fp32(w0 + c + 0);
+      const __m256 vw0_1 = load_fp16x8_to_fp32(w0 + c + 8);
+      const __m256 vw0_2 = load_fp16x8_to_fp32(w0 + c + 16);
+      const __m256 vw0_3 = load_fp16x8_to_fp32(w0 + c + 24);
+
+      const __m256 vw1_0 = load_fp16x8_to_fp32(w1 + c + 0);
+      const __m256 vw1_1 = load_fp16x8_to_fp32(w1 + c + 8);
+      const __m256 vw1_2 = load_fp16x8_to_fp32(w1 + c + 16);
+      const __m256 vw1_3 = load_fp16x8_to_fp32(w1 + c + 24);
+
+      const __m256 vw2_0 = load_fp16x8_to_fp32(w2 + c + 0);
+      const __m256 vw2_1 = load_fp16x8_to_fp32(w2 + c + 8);
+      const __m256 vw2_2 = load_fp16x8_to_fp32(w2 + c + 16);
+      const __m256 vw2_3 = load_fp16x8_to_fp32(w2 + c + 24);
+
+      __m256 prev1_0 = from > 0
+                         ? _mm256_loadu_ps(x_base + (from - 1) * W + c + 0)
+                         : _mm256_setzero_ps();
+      __m256 prev1_1 = from > 0
+                         ? _mm256_loadu_ps(x_base + (from - 1) * W + c + 8)
+                         : _mm256_setzero_ps();
+      __m256 prev1_2 = from > 0
+                         ? _mm256_loadu_ps(x_base + (from - 1) * W + c + 16)
+                         : _mm256_setzero_ps();
+      __m256 prev1_3 = from > 0
+                         ? _mm256_loadu_ps(x_base + (from - 1) * W + c + 24)
+                         : _mm256_setzero_ps();
+
+      __m256 prev2_0 = from > 1
+                         ? _mm256_loadu_ps(x_base + (from - 2) * W + c + 0)
+                         : _mm256_setzero_ps();
+      __m256 prev2_1 = from > 1
+                         ? _mm256_loadu_ps(x_base + (from - 2) * W + c + 8)
+                         : _mm256_setzero_ps();
+      __m256 prev2_2 = from > 1
+                         ? _mm256_loadu_ps(x_base + (from - 2) * W + c + 16)
+                         : _mm256_setzero_ps();
+      __m256 prev2_3 = from > 1
+                         ? _mm256_loadu_ps(x_base + (from - 2) * W + c + 24)
+                         : _mm256_setzero_ps();
+
+      for (unsigned int t = from; t < to; ++t) {
+        const float *x_ptr = x_base + static_cast<size_t>(t) * W + c;
+        float *y_ptr = y_base + static_cast<size_t>(t) * W + c;
+
+        const __m256 cur0 = _mm256_loadu_ps(x_ptr + 0);
+        const __m256 cur1 = _mm256_loadu_ps(x_ptr + 8);
+        const __m256 cur2 = _mm256_loadu_ps(x_ptr + 16);
+        const __m256 cur3 = _mm256_loadu_ps(x_ptr + 24);
+
+        __m256 acc0 = _mm256_mul_ps(cur0, vw0_0);
+        __m256 acc1 = _mm256_mul_ps(cur1, vw0_1);
+        __m256 acc2 = _mm256_mul_ps(cur2, vw0_2);
+        __m256 acc3 = _mm256_mul_ps(cur3, vw0_3);
+
+        acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(prev1_0, vw1_0));
+        acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(prev1_1, vw1_1));
+        acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(prev1_2, vw1_2));
+        acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(prev1_3, vw1_3));
+
+        acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(prev2_0, vw2_0));
+        acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(prev2_1, vw2_1));
+        acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(prev2_2, vw2_2));
+        acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(prev2_3, vw2_3));
+
+        _mm256_storeu_ps(y_ptr + 0, acc0);
+        _mm256_storeu_ps(y_ptr + 8, acc1);
+        _mm256_storeu_ps(y_ptr + 16, acc2);
+        _mm256_storeu_ps(y_ptr + 24, acc3);
+
+        prev2_0 = prev1_0;
+        prev1_0 = cur0;
+        prev2_1 = prev1_1;
+        prev1_1 = cur1;
+        prev2_2 = prev1_2;
+        prev1_2 = cur2;
+        prev2_3 = prev1_3;
+        prev1_3 = cur3;
+      }
+    }
+
+    for (; c + VEC <= W; c += VEC) {
+      const __m256 vw0v = load_fp16x8_to_fp32(w0 + c);
+      const __m256 vw1v = load_fp16x8_to_fp32(w1 + c);
+      const __m256 vw2v = load_fp16x8_to_fp32(w2 + c);
+
+      __m256 prev1 = from > 0 ? _mm256_loadu_ps(x_base + (from - 1) * W + c)
+                              : _mm256_setzero_ps();
+      __m256 prev2 = from > 1 ? _mm256_loadu_ps(x_base + (from - 2) * W + c)
+                              : _mm256_setzero_ps();
+
+      for (unsigned int t = from; t < to; ++t) {
+        const float *x_ptr = x_base + static_cast<size_t>(t) * W + c;
+        float *y_ptr = y_base + static_cast<size_t>(t) * W + c;
+
+        const __m256 cur = _mm256_loadu_ps(x_ptr);
+
+        __m256 acc = _mm256_mul_ps(cur, vw0v);
+        acc = _mm256_add_ps(acc, _mm256_mul_ps(prev1, vw1v));
+        acc = _mm256_add_ps(acc, _mm256_mul_ps(prev2, vw2v));
+
+        _mm256_storeu_ps(y_ptr, acc);
+
+        prev2 = prev1;
+        prev1 = cur;
+      }
+    }
+
+    for (; c < W; ++c) {
+      const float sw0 = fp16_to_fp32_scalar(w0[c]);
+      const float sw1 = fp16_to_fp32_scalar(w1[c]);
+      const float sw2 = fp16_to_fp32_scalar(w2[c]);
+
+      float prev1 =
+        from > 0 ? x_base[static_cast<size_t>(from - 1) * W + c] : 0.0f;
+      float prev2 =
+        from > 1 ? x_base[static_cast<size_t>(from - 2) * W + c] : 0.0f;
+
+      for (unsigned int t = from; t < to; ++t) {
+        const size_t idx = static_cast<size_t>(t) * W + c;
+        const float cur = x_base[idx];
+        y_base[idx] = cur * sw0 + prev1 * sw1 + prev2 * sw2;
+        prev2 = prev1;
+        prev1 = cur;
+      }
     }
   }
 }

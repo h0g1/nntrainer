@@ -2162,6 +2162,75 @@ void transform_int4_osv32_isv2_to_q4_0x4(size_t N, size_t K,
 }
 
 #if defined(__aarch64__) || defined(_M_ARM64)
+static inline float32x4_t load_fp16x4_to_fp32(const uint16_t *src) {
+  const uint16x4_t u16_vec = vld1_u16(src);
+  const float16x4_t half_vec = vreinterpret_f16_u16(u16_vec);
+  return vcvt_f32_f16(half_vec);
+}
+#endif
+
+void causal_depthwise_conv1d_k3_fp16(const float *input,
+                                     const uint16_t *packed_weight,
+                                     float *output, unsigned int B,
+                                     unsigned int H, unsigned int W,
+                                     unsigned int from, unsigned int to) {
+  const uint16_t *w0 = packed_weight;
+  const uint16_t *w1 = packed_weight + W;
+  const uint16_t *w2 = packed_weight + 2 * W;
+
+  for (unsigned int b = 0; b < B; ++b) {
+    const float *x_base = input + static_cast<size_t>(b) * H * W;
+    float *y_base = output + static_cast<size_t>(b) * H * W;
+    unsigned int c = 0;
+
+#if defined(__aarch64__) || defined(_M_ARM64)
+    for (; c + 4 <= W; c += 4) {
+      const float32x4_t vw0 = load_fp16x4_to_fp32(w0 + c);
+      const float32x4_t vw1 = load_fp16x4_to_fp32(w1 + c);
+      const float32x4_t vw2 = load_fp16x4_to_fp32(w2 + c);
+
+      float32x4_t prev1 =
+        from > 0 ? vld1q_f32(x_base + (from - 1) * W + c) : vdupq_n_f32(0.0f);
+      float32x4_t prev2 =
+        from > 1 ? vld1q_f32(x_base + (from - 2) * W + c) : vdupq_n_f32(0.0f);
+
+      for (unsigned int t = from; t < to; ++t) {
+        const float *x_ptr = x_base + static_cast<size_t>(t) * W + c;
+        float *y_ptr = y_base + static_cast<size_t>(t) * W + c;
+        const float32x4_t cur = vld1q_f32(x_ptr);
+
+        float32x4_t acc = vmulq_f32(cur, vw0);
+        acc = vfmaq_f32(acc, prev1, vw1);
+        acc = vfmaq_f32(acc, prev2, vw2);
+        vst1q_f32(y_ptr, acc);
+
+        prev2 = prev1;
+        prev1 = cur;
+      }
+    }
+#endif
+
+    for (; c < W; ++c) {
+      const float sw0 = nntrainer::compute_fp16_to_fp32(w0[c]);
+      const float sw1 = nntrainer::compute_fp16_to_fp32(w1[c]);
+      const float sw2 = nntrainer::compute_fp16_to_fp32(w2[c]);
+      float prev1 =
+        from > 0 ? x_base[static_cast<size_t>(from - 1) * W + c] : 0.0f;
+      float prev2 =
+        from > 1 ? x_base[static_cast<size_t>(from - 2) * W + c] : 0.0f;
+
+      for (unsigned int t = from; t < to; ++t) {
+        const size_t idx = static_cast<size_t>(t) * W + c;
+        const float cur = x_base[idx];
+        y_base[idx] = cur * sw0 + prev1 * sw1 + prev2 * sw2;
+        prev2 = prev1;
+        prev1 = cur;
+      }
+    }
+  }
+}
+
+#if defined(__aarch64__) || defined(_M_ARM64)
 static inline void load_fp16_4_to_chunk(const uint16_t *src, float *dst,
                                         int chunk_size) {
   int i = 0;

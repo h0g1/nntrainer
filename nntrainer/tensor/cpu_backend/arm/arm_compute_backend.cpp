@@ -588,6 +588,15 @@ void compute_rotary_emb_value(unsigned int width, unsigned int dim,
 #endif
 }
 
+void causal_depthwise_conv1d_k3_fp16(const float *input,
+                                     const uint16_t *packed_weight,
+                                     float *output, unsigned int batch,
+                                     unsigned int height, unsigned int width,
+                                     unsigned int from, unsigned int to) {
+  nntrainer::neon::causal_depthwise_conv1d_k3_fp16(
+    input, packed_weight, output, batch, height, width, from, to);
+}
+
 void create_q4_0_weights(const uint8_t *int4_weight, uint8_t *q4_0_weight) {
   nntrainer::neon::create_q4_0_weights(int4_weight, q4_0_weight);
 }
