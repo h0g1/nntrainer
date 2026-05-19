@@ -48,6 +48,117 @@ convert_vector_f16_as_uint16_to_f32(std::vector<uint16_t> uint16_vec) {
 }
 #endif
 
+namespace {
+
+std::vector<uint16_t> convertToFp16Bits(const std::vector<float> &values) {
+  std::vector<uint16_t> fp16_values(values.size());
+  for (size_t i = 0; i < values.size(); ++i) {
+    fp16_values[i] = nntrainer::compute_fp32_to_fp16(values[i]);
+  }
+  return fp16_values;
+}
+
+std::vector<float> referenceCausalDepthwiseConv1dK3Fp16(
+  const std::vector<float> &input, const std::vector<uint16_t> &weight,
+  unsigned int batch, unsigned int height, unsigned int width) {
+  std::vector<float> output(input.size(), 0.0f);
+  const uint16_t *w0 = weight.data();
+  const uint16_t *w1 = weight.data() + width;
+  const uint16_t *w2 = weight.data() + 2 * width;
+
+  for (unsigned int b = 0; b < batch; ++b) {
+    const size_t batch_offset = static_cast<size_t>(b) * height * width;
+    for (unsigned int t = 0; t < height; ++t) {
+      for (unsigned int c = 0; c < width; ++c) {
+        const size_t idx = batch_offset + static_cast<size_t>(t) * width + c;
+        const float cur = input[idx];
+        const float prev1 =
+          t > 0 ? input[batch_offset + static_cast<size_t>(t - 1) * width + c]
+                : 0.0f;
+        const float prev2 =
+          t > 1 ? input[batch_offset + static_cast<size_t>(t - 2) * width + c]
+                : 0.0f;
+
+        output[idx] = cur * nntrainer::compute_fp16_to_fp32(w0[c]) +
+                      prev1 * nntrainer::compute_fp16_to_fp32(w1[c]) +
+                      prev2 * nntrainer::compute_fp16_to_fp32(w2[c]);
+      }
+    }
+  }
+
+  return output;
+}
+
+} // namespace
+
+TEST(nntrainer_cpu_backend_standalone,
+     causal_depthwise_conv1d_k3_fp16_matches_reference) {
+  constexpr unsigned int batch = 2;
+  constexpr unsigned int height = 5;
+  constexpr unsigned int width = 7;
+
+  std::vector<float> input(batch * height * width);
+  for (size_t i = 0; i < input.size(); ++i) {
+    input[i] = static_cast<float>(static_cast<int>(i % 11) - 5) * 0.125f;
+  }
+
+  const std::vector<float> weight_fp32 = {
+    0.25f,  -0.5f,   0.75f,  -1.0f,   0.125f, -0.25f, 0.5f,
+    -0.75f, 0.5f,    -0.25f, 0.25f,   1.0f,   -0.5f,  0.125f,
+    0.375f, -0.125f, 0.625f, -0.875f, 0.25f,  0.5f,   -0.375f,
+  };
+  const std::vector<uint16_t> weight = convertToFp16Bits(weight_fp32);
+  const std::vector<float> expected =
+    referenceCausalDepthwiseConv1dK3Fp16(input, weight, batch, height, width);
+  std::vector<float> output(input.size(), -99.0f);
+
+  nntrainer::causal_depthwise_conv1d_k3_fp16(input.data(), weight.data(),
+                                             output.data(), batch, height,
+                                             width, 0, height);
+
+  for (size_t i = 0; i < output.size(); ++i) {
+    EXPECT_NEAR(expected[i], output[i], 1.0e-4f);
+  }
+}
+
+TEST(nntrainer_cpu_backend_standalone,
+     causal_depthwise_conv1d_k3_fp16_respects_range) {
+  constexpr unsigned int batch = 1;
+  constexpr unsigned int height = 6;
+  constexpr unsigned int width = 9;
+  constexpr unsigned int from = 2;
+  constexpr unsigned int to = 5;
+
+  std::vector<float> input(batch * height * width);
+  for (size_t i = 0; i < input.size(); ++i) {
+    input[i] = static_cast<float>(static_cast<int>(i % 17) - 8) * 0.0625f;
+  }
+
+  std::vector<float> weight_fp32(3 * width);
+  for (size_t i = 0; i < weight_fp32.size(); ++i) {
+    weight_fp32[i] = static_cast<float>(static_cast<int>(i % 7) - 3) * 0.2f;
+  }
+
+  const std::vector<uint16_t> weight = convertToFp16Bits(weight_fp32);
+  const std::vector<float> expected =
+    referenceCausalDepthwiseConv1dK3Fp16(input, weight, batch, height, width);
+  std::vector<float> output(input.size(), -99.0f);
+
+  nntrainer::causal_depthwise_conv1d_k3_fp16(
+    input.data(), weight.data(), output.data(), batch, height, width, from, to);
+
+  for (unsigned int t = 0; t < height; ++t) {
+    for (unsigned int c = 0; c < width; ++c) {
+      const size_t idx = static_cast<size_t>(t) * width + c;
+      if (t >= from && t < to) {
+        EXPECT_NEAR(expected[idx], output[idx], 1.0e-4f);
+      } else {
+        EXPECT_FLOAT_EQ(-99.0f, output[idx]);
+      }
+    }
+  }
+}
+
 template <typename T>
 static inline double find_max_diff(T *src, T *src2, int M, int N) {
   float max_diff = 0;
