@@ -191,9 +191,9 @@ public:
   // CausalLM kernels
   // ===========================================================================
   virtual void causal_depthwise_conv1d_k3_fp16(
-    const float *input, const uint16_t *packed_weight, float *output,
-    unsigned int batch, unsigned int height, unsigned int width,
-    unsigned int from, unsigned int to);
+    const float *input, const uint16_t *packed_weight, const float *state,
+    float *output, float *next_state, unsigned int batch, unsigned int height,
+    unsigned int width);
 
   // ===========================================================================
   // Data conversion (int8 → FP32)

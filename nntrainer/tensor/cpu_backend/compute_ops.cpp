@@ -226,10 +226,10 @@ void ComputeOps::clamp_fp32(const float *, float *, size_t, float, float) {
 }
 
 void ComputeOps::causal_depthwise_conv1d_k3_fp16(const float *,
-                                                 const uint16_t *, float *,
-                                                 unsigned int, unsigned int,
-                                                 unsigned int, unsigned int,
-                                                 unsigned int) {
+                                                 const uint16_t *,
+                                                 const float *, float *,
+                                                 float *, unsigned int,
+                                                 unsigned int, unsigned int) {
   NI(causal_depthwise_conv1d_k3_fp16);
 }
 

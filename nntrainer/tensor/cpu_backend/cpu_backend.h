@@ -1378,19 +1378,18 @@ extern void softmax_row(_FP16 *qk_out, size_t start_row, size_t end_row,
  *
  * @param input input tensor in BxHxW row-major layout
  * @param packed_weight three FP16 kernel rows stored as uint16_t values
+ * @param state optional Bx2xW previous row state. Row 0 is t-2 and row 1 is
+ * t-1.
  * @param output output tensor in BxHxW row-major layout
+ * @param next_state optional Bx2xW state updated with the last two input rows
  * @param batch batch size
  * @param height sequence length
  * @param width channel width
- * @param from first time row to compute, inclusive
- * @param to last time row to compute, exclusive
  */
-extern void causal_depthwise_conv1d_k3_fp16(const float *input,
-                                            const uint16_t *packed_weight,
-                                            float *output, unsigned int batch,
-                                            unsigned int height,
-                                            unsigned int width,
-                                            unsigned int from, unsigned int to);
+extern void causal_depthwise_conv1d_k3_fp16(
+  const float *input, const uint16_t *packed_weight, const float *state,
+  float *output, float *next_state, unsigned int batch, unsigned int height,
+  unsigned int width);
 
 /**
  * @brief Compute vcache for one row transposed

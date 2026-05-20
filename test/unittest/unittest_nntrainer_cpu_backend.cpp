@@ -113,8 +113,8 @@ TEST(nntrainer_cpu_backend_standalone,
   std::vector<float> output(input.size(), -99.0f);
 
   nntrainer::causal_depthwise_conv1d_k3_fp16(input.data(), weight.data(),
-                                             output.data(), batch, height,
-                                             width, 0, height);
+                                             nullptr, output.data(), nullptr,
+                                             batch, height, width);
 
   for (size_t i = 0; i < output.size(); ++i) {
     EXPECT_NEAR(expected[i], output[i], 1.0e-4f);
@@ -122,12 +122,11 @@ TEST(nntrainer_cpu_backend_standalone,
 }
 
 TEST(nntrainer_cpu_backend_standalone,
-     causal_depthwise_conv1d_k3_fp16_respects_range) {
+     causal_depthwise_conv1d_k3_fp16_updates_state_for_chunks) {
   constexpr unsigned int batch = 1;
   constexpr unsigned int height = 6;
   constexpr unsigned int width = 9;
-  constexpr unsigned int from = 2;
-  constexpr unsigned int to = 5;
+  constexpr unsigned int first_chunk = 2;
 
   std::vector<float> input(batch * height * width);
   for (size_t i = 0; i < input.size(); ++i) {
@@ -143,19 +142,25 @@ TEST(nntrainer_cpu_backend_standalone,
   const std::vector<float> expected =
     referenceCausalDepthwiseConv1dK3Fp16(input, weight, batch, height, width);
   std::vector<float> output(input.size(), -99.0f);
+  std::vector<float> state(batch * 2 * width, 0.0f);
 
   nntrainer::causal_depthwise_conv1d_k3_fp16(
-    input.data(), weight.data(), output.data(), batch, height, width, from, to);
+    input.data(), weight.data(), state.data(), output.data(), state.data(),
+    batch, first_chunk, width);
+  nntrainer::causal_depthwise_conv1d_k3_fp16(
+    input.data() + static_cast<size_t>(first_chunk) * width, weight.data(),
+    state.data(), output.data() + static_cast<size_t>(first_chunk) * width,
+    state.data(), batch, height - first_chunk, width);
 
-  for (unsigned int t = 0; t < height; ++t) {
-    for (unsigned int c = 0; c < width; ++c) {
-      const size_t idx = static_cast<size_t>(t) * width + c;
-      if (t >= from && t < to) {
-        EXPECT_NEAR(expected[idx], output[idx], 1.0e-4f);
-      } else {
-        EXPECT_FLOAT_EQ(-99.0f, output[idx]);
-      }
-    }
+  for (size_t i = 0; i < output.size(); ++i) {
+    EXPECT_NEAR(expected[i], output[i], 1.0e-4f);
+  }
+
+  for (unsigned int c = 0; c < width; ++c) {
+    EXPECT_FLOAT_EQ(input[static_cast<size_t>(height - 2) * width + c],
+                    state[c]);
+    EXPECT_FLOAT_EQ(input[static_cast<size_t>(height - 1) * width + c],
+                    state[width + c]);
   }
 }
 

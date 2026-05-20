@@ -381,9 +381,9 @@ void clamp(const float *input, float *output, size_t length, float lower_bound,
 
 void causal_depthwise_conv1d_k3_fp16(const float *input,
                                      const uint16_t *packed_weight,
-                                     float *output, unsigned int B,
-                                     unsigned int H, unsigned int W,
-                                     unsigned int from, unsigned int to) {
+                                     const float *state, float *output,
+                                     float *next_state, unsigned int B,
+                                     unsigned int H, unsigned int W) {
   const uint16_t *w0 = packed_weight;
   const uint16_t *w1 = packed_weight + W;
   const uint16_t *w2 = packed_weight + 2 * W;
@@ -391,22 +391,30 @@ void causal_depthwise_conv1d_k3_fp16(const float *input,
   for (unsigned int b = 0; b < B; ++b) {
     const float *x_base = input + static_cast<size_t>(b) * H * W;
     float *y_base = output + static_cast<size_t>(b) * H * W;
+    const float *state_base =
+      state != nullptr ? state + static_cast<size_t>(b) * 2 * W : nullptr;
+    float *next_state_base = next_state != nullptr
+                               ? next_state + static_cast<size_t>(b) * 2 * W
+                               : nullptr;
 
     for (unsigned int c = 0; c < W; ++c) {
       const float sw0 = nntrainer::compute_fp16_to_fp32(w0[c]);
       const float sw1 = nntrainer::compute_fp16_to_fp32(w1[c]);
       const float sw2 = nntrainer::compute_fp16_to_fp32(w2[c]);
-      float prev1 =
-        from > 0 ? x_base[static_cast<size_t>(from - 1) * W + c] : 0.0f;
-      float prev2 =
-        from > 1 ? x_base[static_cast<size_t>(from - 2) * W + c] : 0.0f;
+      float prev2 = state_base != nullptr ? state_base[c] : 0.0f;
+      float prev1 = state_base != nullptr ? state_base[W + c] : 0.0f;
 
-      for (unsigned int t = from; t < to; ++t) {
+      for (unsigned int t = 0; t < H; ++t) {
         const size_t idx = static_cast<size_t>(t) * W + c;
         const float cur = x_base[idx];
         y_base[idx] = cur * sw0 + prev1 * sw1 + prev2 * sw2;
         prev2 = prev1;
         prev1 = cur;
+      }
+
+      if (next_state_base != nullptr) {
+        next_state_base[c] = prev2;
+        next_state_base[W + c] = prev1;
       }
     }
   }

@@ -481,11 +481,11 @@ void compute_kcaches(const float *in, const uint16_t *kcache, float *output,
 
 void causal_depthwise_conv1d_k3_fp16(const float *input,
                                      const uint16_t *packed_weight,
-                                     float *output, unsigned int batch,
-                                     unsigned int height, unsigned int width,
-                                     unsigned int from, unsigned int to) {
+                                     const float *state, float *output,
+                                     float *next_state, unsigned int batch,
+                                     unsigned int height, unsigned int width) {
   nntrainer::avx2::causal_depthwise_conv1d_k3_fp16(
-    input, packed_weight, output, batch, height, width, from, to);
+    input, packed_weight, state, output, next_state, batch, height, width);
 }
 
 void compute_rotary_emb_value(unsigned int width, unsigned int dim,

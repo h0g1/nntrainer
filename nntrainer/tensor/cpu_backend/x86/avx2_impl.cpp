@@ -99,8 +99,8 @@ namespace {
 
 template <typename To_, typename From_>
 constexpr inline bool concept17_BinaryCastable =
-  sizeof(To_) == sizeof(From_) && std::is_trivially_copyable_v<From_> &&
-  std::is_trivially_copyable_v<To_>;
+  sizeof(To_) == sizeof(From_) &&
+  std::is_trivially_copyable_v<From_> &&std::is_trivially_copyable_v<To_>;
 
 template <class To_, class From_>
 auto compat_bit_cast(const From_ &src) noexcept
@@ -1230,9 +1230,9 @@ void ele_add(const unsigned int N, const float *X, const float *Y, float *Z,
 
 void causal_depthwise_conv1d_k3_fp16(const float *input,
                                      const uint16_t *packed_weight,
-                                     float *output, unsigned int B,
-                                     unsigned int H, unsigned int W,
-                                     unsigned int from, unsigned int to) {
+                                     const float *state, float *output,
+                                     float *next_state, unsigned int B,
+                                     unsigned int H, unsigned int W) {
   const uint16_t *w0 = packed_weight;
   const uint16_t *w1 = packed_weight + W;
   const uint16_t *w2 = packed_weight + 2 * W;
@@ -1241,8 +1241,19 @@ void causal_depthwise_conv1d_k3_fp16(const float *input,
   constexpr unsigned int TILE = 32;
 
   auto load_fp16x8_to_fp32 = [](const uint16_t *src) -> __m256 {
+#if defined(__F16C__) || defined(_WIN32)
     const __m128i h = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
     return _mm256_cvtph_ps(h);
+#else
+    return _mm256_set_ps(nntrainer::compute_fp16_to_fp32(src[7]),
+                         nntrainer::compute_fp16_to_fp32(src[6]),
+                         nntrainer::compute_fp16_to_fp32(src[5]),
+                         nntrainer::compute_fp16_to_fp32(src[4]),
+                         nntrainer::compute_fp16_to_fp32(src[3]),
+                         nntrainer::compute_fp16_to_fp32(src[2]),
+                         nntrainer::compute_fp16_to_fp32(src[1]),
+                         nntrainer::compute_fp16_to_fp32(src[0]));
+#endif
   };
 
   auto fp16_to_fp32_scalar = [](uint16_t h) -> float {
@@ -1252,6 +1263,11 @@ void causal_depthwise_conv1d_k3_fp16(const float *input,
   for (unsigned int b = 0; b < B; ++b) {
     const float *x_base = input + static_cast<size_t>(b) * H * W;
     float *y_base = output + static_cast<size_t>(b) * H * W;
+    const float *state_base =
+      state != nullptr ? state + static_cast<size_t>(b) * 2 * W : nullptr;
+    float *next_state_base = next_state != nullptr
+                               ? next_state + static_cast<size_t>(b) * 2 * W
+                               : nullptr;
 
     unsigned int c = 0;
 
@@ -1271,33 +1287,33 @@ void causal_depthwise_conv1d_k3_fp16(const float *input,
       const __m256 vw2_2 = load_fp16x8_to_fp32(w2 + c + 16);
       const __m256 vw2_3 = load_fp16x8_to_fp32(w2 + c + 24);
 
-      __m256 prev1_0 = from > 0
-                         ? _mm256_loadu_ps(x_base + (from - 1) * W + c + 0)
+      __m256 prev2_0 = state_base != nullptr
+                         ? _mm256_loadu_ps(state_base + c + 0)
                          : _mm256_setzero_ps();
-      __m256 prev1_1 = from > 0
-                         ? _mm256_loadu_ps(x_base + (from - 1) * W + c + 8)
+      __m256 prev2_1 = state_base != nullptr
+                         ? _mm256_loadu_ps(state_base + c + 8)
                          : _mm256_setzero_ps();
-      __m256 prev1_2 = from > 0
-                         ? _mm256_loadu_ps(x_base + (from - 1) * W + c + 16)
+      __m256 prev2_2 = state_base != nullptr
+                         ? _mm256_loadu_ps(state_base + c + 16)
                          : _mm256_setzero_ps();
-      __m256 prev1_3 = from > 0
-                         ? _mm256_loadu_ps(x_base + (from - 1) * W + c + 24)
-                         : _mm256_setzero_ps();
-
-      __m256 prev2_0 = from > 1
-                         ? _mm256_loadu_ps(x_base + (from - 2) * W + c + 0)
-                         : _mm256_setzero_ps();
-      __m256 prev2_1 = from > 1
-                         ? _mm256_loadu_ps(x_base + (from - 2) * W + c + 8)
-                         : _mm256_setzero_ps();
-      __m256 prev2_2 = from > 1
-                         ? _mm256_loadu_ps(x_base + (from - 2) * W + c + 16)
-                         : _mm256_setzero_ps();
-      __m256 prev2_3 = from > 1
-                         ? _mm256_loadu_ps(x_base + (from - 2) * W + c + 24)
+      __m256 prev2_3 = state_base != nullptr
+                         ? _mm256_loadu_ps(state_base + c + 24)
                          : _mm256_setzero_ps();
 
-      for (unsigned int t = from; t < to; ++t) {
+      __m256 prev1_0 = state_base != nullptr
+                         ? _mm256_loadu_ps(state_base + W + c + 0)
+                         : _mm256_setzero_ps();
+      __m256 prev1_1 = state_base != nullptr
+                         ? _mm256_loadu_ps(state_base + W + c + 8)
+                         : _mm256_setzero_ps();
+      __m256 prev1_2 = state_base != nullptr
+                         ? _mm256_loadu_ps(state_base + W + c + 16)
+                         : _mm256_setzero_ps();
+      __m256 prev1_3 = state_base != nullptr
+                         ? _mm256_loadu_ps(state_base + W + c + 24)
+                         : _mm256_setzero_ps();
+
+      for (unsigned int t = 0; t < H; ++t) {
         const float *x_ptr = x_base + static_cast<size_t>(t) * W + c;
         float *y_ptr = y_base + static_cast<size_t>(t) * W + c;
 
@@ -1335,6 +1351,17 @@ void causal_depthwise_conv1d_k3_fp16(const float *input,
         prev2_3 = prev1_3;
         prev1_3 = cur3;
       }
+
+      if (next_state_base != nullptr) {
+        _mm256_storeu_ps(next_state_base + c + 0, prev2_0);
+        _mm256_storeu_ps(next_state_base + c + 8, prev2_1);
+        _mm256_storeu_ps(next_state_base + c + 16, prev2_2);
+        _mm256_storeu_ps(next_state_base + c + 24, prev2_3);
+        _mm256_storeu_ps(next_state_base + W + c + 0, prev1_0);
+        _mm256_storeu_ps(next_state_base + W + c + 8, prev1_1);
+        _mm256_storeu_ps(next_state_base + W + c + 16, prev1_2);
+        _mm256_storeu_ps(next_state_base + W + c + 24, prev1_3);
+      }
     }
 
     for (; c + VEC <= W; c += VEC) {
@@ -1342,12 +1369,12 @@ void causal_depthwise_conv1d_k3_fp16(const float *input,
       const __m256 vw1v = load_fp16x8_to_fp32(w1 + c);
       const __m256 vw2v = load_fp16x8_to_fp32(w2 + c);
 
-      __m256 prev1 = from > 0 ? _mm256_loadu_ps(x_base + (from - 1) * W + c)
-                              : _mm256_setzero_ps();
-      __m256 prev2 = from > 1 ? _mm256_loadu_ps(x_base + (from - 2) * W + c)
-                              : _mm256_setzero_ps();
+      __m256 prev2 = state_base != nullptr ? _mm256_loadu_ps(state_base + c)
+                                           : _mm256_setzero_ps();
+      __m256 prev1 = state_base != nullptr ? _mm256_loadu_ps(state_base + W + c)
+                                           : _mm256_setzero_ps();
 
-      for (unsigned int t = from; t < to; ++t) {
+      for (unsigned int t = 0; t < H; ++t) {
         const float *x_ptr = x_base + static_cast<size_t>(t) * W + c;
         float *y_ptr = y_base + static_cast<size_t>(t) * W + c;
 
@@ -1362,6 +1389,11 @@ void causal_depthwise_conv1d_k3_fp16(const float *input,
         prev2 = prev1;
         prev1 = cur;
       }
+
+      if (next_state_base != nullptr) {
+        _mm256_storeu_ps(next_state_base + c, prev2);
+        _mm256_storeu_ps(next_state_base + W + c, prev1);
+      }
     }
 
     for (; c < W; ++c) {
@@ -1369,17 +1401,20 @@ void causal_depthwise_conv1d_k3_fp16(const float *input,
       const float sw1 = fp16_to_fp32_scalar(w1[c]);
       const float sw2 = fp16_to_fp32_scalar(w2[c]);
 
-      float prev1 =
-        from > 0 ? x_base[static_cast<size_t>(from - 1) * W + c] : 0.0f;
-      float prev2 =
-        from > 1 ? x_base[static_cast<size_t>(from - 2) * W + c] : 0.0f;
+      float prev2 = state_base != nullptr ? state_base[c] : 0.0f;
+      float prev1 = state_base != nullptr ? state_base[W + c] : 0.0f;
 
-      for (unsigned int t = from; t < to; ++t) {
+      for (unsigned int t = 0; t < H; ++t) {
         const size_t idx = static_cast<size_t>(t) * W + c;
         const float cur = x_base[idx];
         y_base[idx] = cur * sw0 + prev1 * sw1 + prev2 * sw2;
         prev2 = prev1;
         prev1 = cur;
+      }
+
+      if (next_state_base != nullptr) {
+        next_state_base[c] = prev2;
+        next_state_base[W + c] = prev1;
       }
     }
   }

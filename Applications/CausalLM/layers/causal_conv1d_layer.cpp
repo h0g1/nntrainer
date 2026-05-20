@@ -32,9 +32,9 @@ bool isRawFp16WeightType(ml::train::TensorDim::DataType dtype) {
 }
 
 void causalDepthwiseConv1dK3Fp32(const float *input, const float *weight,
-                                 float *output, unsigned int batch,
-                                 unsigned int height, unsigned int width,
-                                 unsigned int from, unsigned int to) {
+                                 const float *state, float *output,
+                                 float *next_state, unsigned int batch,
+                                 unsigned int height, unsigned int width) {
   const float *w0 = weight;
   const float *w1 = weight + width;
   const float *w2 = weight + 2 * width;
@@ -42,19 +42,27 @@ void causalDepthwiseConv1dK3Fp32(const float *input, const float *weight,
   for (unsigned int b = 0; b < batch; ++b) {
     const float *x_base = input + static_cast<size_t>(b) * height * width;
     float *y_base = output + static_cast<size_t>(b) * height * width;
+    const float *state_base =
+      state != nullptr ? state + static_cast<size_t>(b) * 2 * width : nullptr;
+    float *next_state_base = next_state != nullptr
+                               ? next_state + static_cast<size_t>(b) * 2 * width
+                               : nullptr;
 
     for (unsigned int c = 0; c < width; ++c) {
-      float prev1 =
-        from > 0 ? x_base[static_cast<size_t>(from - 1) * width + c] : 0.0f;
-      float prev2 =
-        from > 1 ? x_base[static_cast<size_t>(from - 2) * width + c] : 0.0f;
+      float prev2 = state_base != nullptr ? state_base[c] : 0.0f;
+      float prev1 = state_base != nullptr ? state_base[width + c] : 0.0f;
 
-      for (unsigned int t = from; t < to; ++t) {
+      for (unsigned int t = 0; t < height; ++t) {
         const size_t idx = static_cast<size_t>(t) * width + c;
         const float cur = x_base[idx];
         y_base[idx] = cur * w0[c] + prev1 * w1[c] + prev2 * w2[c];
         prev2 = prev1;
         prev1 = cur;
+      }
+
+      if (next_state_base != nullptr) {
+        next_state_base[c] = prev2;
+        next_state_base[width + c] = prev1;
       }
     }
   }
@@ -64,6 +72,7 @@ void causalDepthwiseConv1dK3Fp32(const float *input, const float *weight,
 
 CausalConv1DLayer::CausalConv1DLayer() : LayerImpl() {
   weight_idx.fill(std::numeric_limits<unsigned int>::max());
+  tensor_idx.fill(std::numeric_limits<unsigned int>::max());
 }
 
 void CausalConv1DLayer::validateInputShape(
@@ -121,10 +130,17 @@ void CausalConv1DLayer::finalize(nntrainer::InitLayerContext &context) {
   weight_idx[weight] = context.requestWeight(
     weight_dim, weight_initializer, weight_regularizer,
     weight_regularizer_constant, weight_decay, "causal_conv1d_weight", true);
+
+  nntrainer::TensorDim state_dim(
+    {input_dim.batch(), 1, KERNEL_SIZE - 1, input_dim.width()},
+    {context.getFormat(), ml::train::TensorDim::DataType::FP32});
+  tensor_idx[conv_state] = context.requestTensor(
+    state_dim, "causal_conv1d_state", nntrainer::Initializer::ZEROS, false,
+    nntrainer::TensorLifespan::MAX_LIFESPAN);
 }
 
-void CausalConv1DLayer::runRange(nntrainer::RunLayerContext &context,
-                                 unsigned int from, unsigned int to,
+void CausalConv1DLayer::runLocal(nntrainer::RunLayerContext &context,
+                                 unsigned int step_size, bool reset_state,
                                  bool training) {
   NNTR_THROW_IF(training, std::invalid_argument)
     << "[CausalConv1DLayer] training/backward is not supported yet.";
@@ -132,31 +148,40 @@ void CausalConv1DLayer::runRange(nntrainer::RunLayerContext &context,
   nntrainer::Tensor &input = context.getInput(SINGLE_INOUT_IDX);
   nntrainer::Tensor &output = context.getOutput(SINGLE_INOUT_IDX);
   nntrainer::Tensor &weight_tensor = context.getWeight(weight_idx[weight]);
+  nntrainer::Tensor &state_tensor = context.getTensor(tensor_idx[conv_state]);
 
   const nntrainer::TensorDim &input_dim = input.getDim();
+  const nntrainer::TensorDim &output_dim = output.getDim();
   validateInputShape(input_dim);
 
   NNTR_THROW_IF(output.getDataType() != ml::train::TensorDim::DataType::FP32,
                 std::invalid_argument)
     << "[CausalConv1DLayer] output dtype must be FP32.";
 
-  NNTR_THROW_IF(from > to || to > input_dim.height(), std::invalid_argument)
-    << "[CausalConv1DLayer] invalid range: from=" << from << ", to=" << to
-    << ", H=" << input_dim.height();
+  NNTR_THROW_IF(step_size > input_dim.height() ||
+                  step_size > output_dim.height(),
+                std::invalid_argument)
+    << "[CausalConv1DLayer] invalid step size: step_size=" << step_size
+    << ", input H=" << input_dim.height()
+    << ", output H=" << output_dim.height();
 
-  if (from == to) {
+  if (step_size == 0) {
     return;
   }
 
+  if (reset_state) {
+    state_tensor.setZero();
+  }
+
   const unsigned int batch = input_dim.batch();
-  const unsigned int height = input_dim.height();
   const unsigned int width = input_dim.width();
+  float *state = state_tensor.getData<float>();
 
   const auto weight_dtype = weight_tensor.getDataType();
   if (weight_dtype == ml::train::TensorDim::DataType::FP32) {
     causalDepthwiseConv1dK3Fp32(
-      input.getData<float>(), weight_tensor.getData<float>(),
-      output.getData<float>(), batch, height, width, from, to);
+      input.getData<float>(), weight_tensor.getData<float>(), state,
+      output.getData<float>(), state, batch, step_size, width);
     return;
   }
 
@@ -169,19 +194,23 @@ void CausalConv1DLayer::runRange(nntrainer::RunLayerContext &context,
   }
 
   ops->causal_depthwise_conv1d_k3_fp16(
-    input.getData<float>(), weight_tensor.getData<uint16_t>(),
-    output.getData<float>(), batch, height, width, from, to);
+    input.getData<float>(), weight_tensor.getData<uint16_t>(), state,
+    output.getData<float>(), state, batch, step_size, width);
 }
 
 void CausalConv1DLayer::forwarding(nntrainer::RunLayerContext &context,
                                    bool training) {
-  runRange(context, 0, context.getInput(SINGLE_INOUT_IDX).height(), training);
+  runLocal(context, context.getInput(SINGLE_INOUT_IDX).height(), true,
+           training);
 }
 
 void CausalConv1DLayer::incremental_forwarding(
   nntrainer::RunLayerContext &context, unsigned int from, unsigned int to,
   bool training) {
-  runRange(context, from, to, training);
+  NNTR_THROW_IF(from > to, std::invalid_argument)
+    << "[CausalConv1DLayer] invalid incremental range: from=" << from
+    << ", to=" << to;
+  runLocal(context, to - from, from == 0, training);
 }
 
 void CausalConv1DLayer::calcDerivative(nntrainer::RunLayerContext &context) {
@@ -204,6 +233,19 @@ void CausalConv1DLayer::exportTo(nntrainer::Exporter &exporter,
 void CausalConv1DLayer::setProperty(const std::vector<std::string> &values) {
   NNTR_THROW_IF(!values.empty(), std::invalid_argument)
     << "[CausalConv1DLayer] does not take properties.";
+}
+
+void CausalConv1DLayer::updateTensorsByInputDimensions(
+  nntrainer::RunLayerContext &context,
+  std::vector<nntrainer::TensorDim> input_dimensions) {
+  nntrainer::TensorDim state_dim(
+    {input_dimensions[0].batch(), 1, KERNEL_SIZE - 1,
+     input_dimensions[0].width()},
+    {input_dimensions[0].getFormat(), ml::train::TensorDim::DataType::FP32});
+
+  context.updateInput(SINGLE_INOUT_IDX, input_dimensions[0]);
+  context.updateOutput(SINGLE_INOUT_IDX, input_dimensions[0]);
+  context.updateTensor(tensor_idx[conv_state], state_dim);
 }
 
 } // namespace causallm

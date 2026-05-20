@@ -41,8 +41,8 @@ namespace causallm {
  * @brief   Depthwise causal Conv1D layer with kernel size 3.
  *
  * The layer expects Bx1xHxW tensors and computes each time row from the
- * current and two previous rows. It is inference-only and supports incremental
- * execution by computing only the requested [from, to) sequence range.
+ * current and two previous rows. It is inference-only and keeps the previous
+ * two rows as state during incremental execution.
  */
 WIN_EXPORT class CausalConv1DLayer final : public nntrainer::LayerImpl {
 public:
@@ -112,18 +112,28 @@ public:
    */
   WIN_EXPORT void setProperty(const std::vector<std::string> &values) override;
 
+  /**
+   * @copydoc Layer::updateTensorsByInputDimensions(RunLayerContext &context,
+   * std::vector<TensorDim> input_dimensions)
+   */
+  WIN_EXPORT void updateTensorsByInputDimensions(
+    nntrainer::RunLayerContext &context,
+    std::vector<nntrainer::TensorDim> input_dimensions) override;
+
   inline static const std::string type = "causal_conv1d";
 
 private:
   enum CausalConv1DParams { weight = 0 };
+  enum CausalConv1DTensors { conv_state = 0 };
   static constexpr size_t SINGLE_INOUT_IDX = 0;
   static constexpr unsigned int KERNEL_SIZE = 3;
 
   std::array<unsigned int, 1> weight_idx;
+  std::array<unsigned int, 1> tensor_idx;
 
   void validateInputShape(const nntrainer::TensorDim &input_dim) const;
-  void runRange(nntrainer::RunLayerContext &context, unsigned int from,
-                unsigned int to, bool training);
+  void runLocal(nntrainer::RunLayerContext &context, unsigned int step_size,
+                bool reset_state, bool training);
 };
 
 } // namespace causallm
